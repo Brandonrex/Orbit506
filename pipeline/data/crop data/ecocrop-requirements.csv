@@ -1,0 +1,5 @@
+﻿crop,crop_id,scientific_name,optimal_temp_min_c,optimal_temp_max_c,tolerated_temp_min_c,tolerated_temp_max_c,optimal_rain_min_mm_year,optimal_rain_max_mm_year,tolerated_rain_min_mm_year,tolerated_rain_max_mm_year,growing_days_min,growing_days_max,drainage,drainage_rating
+Cebolla,364,Allium cepa,12,25,4,30,350,600,300,2800,85,175,['well (dry spells)'],['well (dry spells)']
+Zanahoria,871,Daucus carota,15,24,3,30,600,1200,400,4000,40,150,['well (dry spells)'],['well (dry spells)']
+Camote,1265,Ipomoea batatas,18,28,10,38,750,2000,350,5000,80,170,,
+Papa,1971,Solanum tuberosum,15,25,7,30,500,800,250,2000,90,160,['well (dry spells)'],['well (dry spells)' 'excessive (dry/moderately dry)']
