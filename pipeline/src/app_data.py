@@ -103,3 +103,40 @@ print("❄️ Coldest corrected night:", series["tmin_extreme_c"].min().round(1)
 print("🌱 Months with NDVI:", f"{series['ndvi'].notna().mean():.0%}")
 print("\nFrost risk (typical months):")
 print(typical["frost_risk"].value_counts())
+
+# 12. TABLE 3: one row per point and YEAR
+series["tmean_c"] = (series["tmax_c"] + series["tmin_c"]) / 2
+yearly = (series.groupby(["point_id", "year"])
+          .agg(lat=("lat", "first"), lon=("lon", "first"),
+               elevation_m=("elevation_m", "first"),
+               rain_mm=("rain_mm", "sum"),              # total of the year
+               tmean_c=("tmean_c", "mean"),             # average temperature of the year
+               tmax_c=("tmax_c", "mean"),
+               tmin_c=("tmin_c", "mean"),
+               tmin_extreme_c=("tmin_extreme_c", "min"), # coldest night of the year
+               eto_mm=("eto_mm", "sum"),
+               balance_mm=("balance_mm", "sum"),
+               soil_wetness=("soil_wetness", "mean"),
+               ndvi=("ndvi", "mean"))
+          .reset_index().round(2))
+yearly.to_csv(P + "app_data_yearly.csv", index=False)
+
+# 13. TABLE 4: the TYPICAL YEAR per point (average of 2020-2025)
+annual_normal = (yearly.groupby("point_id")
+                 .agg(lat=("lat", "first"), lon=("lon", "first"),
+                      elevation_m=("elevation_m", "first"),
+                      rain_mm=("rain_mm", "mean"),
+                      tmean_c=("tmean_c", "mean"),
+                      tmax_c=("tmax_c", "mean"),
+                      tmin_c=("tmin_c", "mean"),
+                      tmin_extreme_c=("tmin_extreme_c", "min"),
+                      eto_mm=("eto_mm", "mean"),
+                      balance_mm=("balance_mm", "mean"),
+                      soil_wetness=("soil_wetness", "mean"),
+                      ndvi=("ndvi", "mean"))
+                 .reset_index().round(2))
+annual_normal.to_csv(P + "app_data_annual_normal.csv", index=False)
+
+print("\n✅ Yearly rows:", len(yearly), "(expected 192 x 6 = 1152)")
+print("✅ Annual normal rows:", len(annual_normal), "(expected 192)")
+print(annual_normal[["elevation_m", "tmean_c", "rain_mm"]].describe().round(1))
