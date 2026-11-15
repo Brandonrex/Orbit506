@@ -6,139 +6,188 @@ A plain-language guide to our data. No farming background needed.
 
 ---
 
-## 1. The files
+We have the same climate data (2020–2025, 192 points) organized in 4 ways, from the most detailed to the most general. Pick the one that answers your question.
+
+### 1️⃣ `app_data_series.csv` → every month of every year
+- **Each row:** one point + one year + one month
+- **Example:** "Point 47, March 2023: 18 °C" *(example values)*
+- **Rows:** 192 × 72 = 13,824
+- **Use it for:** charts that show how the climate changed month by month
+
+### 2️⃣ `app_data.csv` → the typical month
+- **Each row:** one point + one month (no year)
+- **Example:** "Point 47, in March it is usually 17 °C" (the average of the 6 Marches) *(example values)*
+- **Rows:** 192 × 12 = 2,304
+- **Use it for:** knowing what each month is normally like, to decide when to plant
+
+### 3️⃣ `app_data_yearly.csv` → each year 🆕
+- **Each row:** one point + one year
+- **Example:** "Point 47, in 2023 the average temperature was 16.5 °C and it rained 2,800 mm" *(example values)*
+- **Rows:** 192 × 6 = 1,152
+- **Use it for:** comparing years ("was 2024 warmer than 2021?")
+
+### 4️⃣ `app_data_annual_normal.csv` → the typical year 🆕
+- **Each row:** one point (a single number per variable)
+- **Example:** "Point 47, the average temperature is usually 16.8 °C and it rains 2,900 mm a year" *(example values)*
+- **Rows:** 192 (one per point)
+- **Use it for:** comparing the normal climate of each place with what each crop needs
+
+### How they are built from each other
+
+
+
+Everything comes from table 1️⃣. The others are summaries, from more detailed to more general.
+
+### Other files
 
 | File | What's inside | Use it for |
 |---|---|---|
 | `data/processed/cuadricula.csv` | 192 points spread over Cartago, one every ~5 km. Key: `ID` | Drawing points on the map and finding the point closest to a click |
-| `data/processed/app_data.csv` | One row per point and per **typical month** (the 2020–2025 average of each month). 192 x 12 = 2,304 rows | The planting calendar: "what is a normal January like here?" |
-| `data/processed/app_data_series.csv` | One row per point, **year** and month (2020–2025). 192 x 72 = 13,824 rows | Timeline charts: "was 2024 drier than usual?" |
-| `data/processed/elevation.csv` | Elevation of each of the 192 points | Internal (already included in app_data) |
-| `data/processed/ndvi_monthly.csv` | Clean monthly NDVI per point | Internal (already included in app_data) |
+| `data/processed/elevation.csv` | Elevation of each point | Internal (already included in the tables above) |
+| `data/processed/ndvi_monthly.csv` | Clean monthly NDVI per point | Internal (already included in the tables above) |
 
-**How to use them:** when the user clicks on the map, find the closest point in `cuadricula.csv`, then filter `app_data.csv` (or `app_data_series.csv`) by that `point_id`.
+**How to use them:** when the user clicks on the map, find the closest point in `cuadricula.csv`, then filter the table you need by that `point_id` (= `ID` in the grid file).
+
+All files are in `pipeline/data/processed/`.
 
 ---
 
 ## 2. The datasets (where the data comes from)
 
 ### NASA POWER – the weather ✅
-- **What it is:** a free NASA service that gives daily weather (rain, temperature, sunlight, soil wetness) for any place on Earth. Think of it as a **virtual weather station**: NASA estimates the weather from satellites and climate models.
+- **What it is:** a free NASA service that gives daily weather (rain, temperature, sunlight, soil wetness) for any place on Earth. Think of it as a **virtual weather station**.
+- **How NASA makes it:** weather comes from the MERRA-2 model (squares of ~50 km); sunlight comes from satellites (squares of ~110 km). Each value is the **average of its square**. NASA checks its accuracy against ground weather stations.
 - **What we take from it:** rainfall, maximum and minimum temperature, solar radiation and root-zone soil wetness (`GWETROOT`).
-- **Detail:** coarse. Each value covers a square of about 50 km, so all of Cartago falls in only 4 squares.
+- **Documentation:** "POWER Data Methodology" (power.larc.nasa.gov/docs/methodology).
 
 ### MODIS (NDVI) – how green the land is ✅
-- **What it is:** a NASA satellite that photographs the whole planet every day and measures how green the vegetation is.
-- **What we take from it:** NDVI, every 16 days, averaged by month.
-- **Detail:** fine. Each value covers 250 m.
-- **Cleaning:** we removed the "no data" code (-3000) and values flagged as cloudy. About 86% of the months have a value.
+- **What it is:** a NASA satellite that photographs the whole planet and measures how green the vegetation is.
+- **How NASA makes it:** out of every 16 days of images, it **keeps the best one** (fewest clouds, best angle). Each value covers 250 m.
+- **Our cleaning:** we removed the "no data" code (-3000) and values flagged as cloudy, then averaged by month. About 86% of the months have a value.
+- **Documentation:** MOD13Q1 User Guide and ATBD (NASA Earthdata).
 
 ### NASADEM – the shape of the land ✅ (elevation) · ⏳ (slope)
 - **What it is:** a NASA elevation map: how high every spot is above sea level.
+- **How NASA made it:** radar from a space shuttle (SRTM mission, year 2000), later improved with satellite laser measurements. Each value covers 30 m.
 - **What we take from it:** elevation of each point (241 m to 3,223 m in our grid). Slope is still pending.
-- **Detail:** very fine. Each value covers 30 m. It doesn't change over time.
+- **Documentation:** NASADEM User Guide (LP DAAC).
 
 ### SMAP – how wet the soil is ⏳ (optional)
-- **What it is:** a NASA satellite that measures the water stored in the soil, even through clouds.
-- **Detail:** ~9 km, finer than NASA POWER. If it arrives, we compare it with `soil_wetness`.
+- A NASA satellite that measures soil water, even through clouds (~9 km). If it arrives, we compare it with `soil_wetness`.
 
 ### AppEEARS – not a dataset, a tool
-- A NASA website where you ask for **only the pieces you need** ("these points, these dates, these variables") instead of downloading huge satellite files. We used it to get MODIS and NASADEM.
+- A NASA website where you ask for **only the pieces you need** (these points, these dates, these variables) instead of downloading huge satellite files. We used it to get MODIS and NASADEM.
+
+### ECOCROP – what each crop needs (used by our BA)
+- The FAO database of crop requirements (temperature, rainfall, altitude, growing cycle). Fact sheets at ecocrop.apps.fao.org.
 
 ---
 
 ## 3. The variables, explained simply
 
 ### `rain_mm` – Rainfall ✅
-- **What it is:** how much it rained in the month. Imagine a straight glass left outside: 1 mm means the water reached 1 millimeter high. 1 mm = 1 liter of water per square meter.
-- **Unit:** mm per month.
+- **What it is:** how much it rained. Imagine a straight glass left outside: 1 mm means the water reached 1 millimeter high. 1 mm = 1 liter of water per square meter.
+- **Unit:** mm per month (monthly tables) or **mm per year** (yearly tables: the **sum** of the 12 months).
 - **Why it matters:** crops need water, but too much rain on steep land washes the soil away.
 
 ### `tmax_c` and `tmin_c` – Day and night temperature ✅ (corrected for elevation)
-- **What it is:** the average daytime high and nighttime low of the month, **adjusted to the real height of each point**.
+- **What it is:** the average daytime high and nighttime low, **adjusted to the real height of each point**.
 - **Unit:** °C.
-- **Why it matters:** each crop has a temperature range it likes. Potatoes like cool weather; very hot or very cold weather hurts them.
+
+### `tmean_c` – Average temperature 🆕 (yearly tables)
+- **What it is:** the average temperature: **(maximum + minimum) ÷ 2**, then averaged over the 12 months of the year. This is the standard FAO method when only maximum and minimum are available.
+- **Unit:** °C. Already corrected for elevation.
+- **Why it matters:** it is the value our BA compares with each crop's ideal temperature range (ECOCROP `topmn`–`topmx`).
 
 ### `tmin_extreme_c` – The coldest night ✅ (corrected for elevation)
-- **What it is:** the coldest night recorded in that month (2020–2025).
+- **What it is:** the coldest night recorded in that month (monthly tables) or year (yearly tables).
 - **Unit:** °C.
-- **Why it matters:** one very cold night can be enough to damage a crop (frost). This is the input for `frost_risk`.
+- **Why it matters:** one very cold night can be enough to damage a crop (frost).
 
-### `temp_correction_c` – How much we adjusted the temperature 🆕
-- **What it is:** how many °C we added or subtracted to NASA POWER's temperature because of the point's real height.
-- **How:** about 6.5 °C colder for every 1,000 m higher than NASA POWER's square.
-- **How to read it:** negative = the point is higher (colder) than the square's average; positive = lower (warmer). In our grid it goes from about −14 °C to +5 °C.
-- **Why it matters:** transparency. Anyone can see exactly how much we changed the original data.
+### `temp_correction_c` – How much we adjusted the temperature
+- **What it is:** how many °C we added or subtracted to NASA POWER's temperature because of the point's real height (about 6.5 °C colder for every 1,000 m higher).
+- **How to read it:** negative = the point is higher (colder) than the NASA square's average; positive = lower (warmer). In our grid it goes from about −14 °C to +5 °C.
 
 ### `eto_mm` – Water the land loses (evapotranspiration) ✅
-- **What it is:** water that goes back into the air: from the soil (like a puddle drying) plus from the plants (like they "sweat"). Hot, sunny days = more water lost.
-- **Unit:** mm per month.
-- **How we get it:** Hargreaves formula (recommended by FAO when data is limited), using the **corrected** temperatures.
+- **What it is:** water that goes back into the air from the soil and the plants. Hot, sunny days = more water lost.
+- **Unit:** mm per month, or mm per year (sum) in the yearly tables.
+- **How we get it:** Hargreaves formula (FAO), using the corrected temperatures.
 
-### `balance_mm` – Is there enough water? (water balance) ✅
+### `balance_mm` – Is there enough water? ✅
 - **What it is:** rainfall minus water lost (`rain_mm − eto_mm`). Like a bank account: rain is income, ETo is spending.
-- **How to read it:** positive (+) = surplus water (on steep land, erosion risk); negative (−) = plants may lack water.
+- **How to read it:** positive (+) = surplus water; negative (−) = plants may lack water.
 
 ### `soil_wetness` – How full the soil "sponge" is ✅
-- **What it is:** how much water the root zone (top ~1 m of soil) holds compared to its maximum. 0 = completely dry, 1 = completely soaked.
+- **What it is:** how much water the root zone (top ~1 m of soil) holds. 0 = completely dry, 1 = completely soaked.
 - **Source:** NASA POWER (`GWETROOT`). Coarse (~50 km).
-- **Why it matters:** very low = plants may suffer; close to 1 = soaked soil (on steep land, more erosion risk).
 
 ### `elevation_m` – How high the place is ✅
-- **What it is:** meters above sea level (NASADEM).
-- **Why it matters:** higher = colder. We use it to correct temperatures and estimate frost risk.
+- **What it is:** meters above sea level (NASADEM). Higher = colder.
 
 ### `ndvi` – How green the land is ✅
-- **What it is:** how much healthy, green vegetation there is (from -1 to 1).
-- **How to read it (rough guide):** below 0.2 = bare soil, roads or water; 0.2–0.5 = young crops or stressed plants; above 0.5 = healthy crops or forest.
-- **Why it matters:** low NDVI on farmland means **bare soil**, which rain washes away easily. Points with high NDVI all year are probably forest or protected areas, not farms.
+- **What it is:** healthy green vegetation, from -1 to 1. Below 0.2 = bare soil, roads or water; 0.2–0.5 = young crops or stressed plants; above 0.5 = healthy crops or forest.
 - **Note:** some months are empty because of clouds.
 
 ### `frost_risk` – Risk of frost ✅ (provisional thresholds)
-- **What it is:** our own indicator, based on the coldest corrected night of the month.
-- **Values:** high (≤ 2 °C) / medium (≤ 5 °C) / low.
-- **⚠️ The thresholds are provisional** and must be validated by our BA with a source for each crop.
+- **Values:** high (coldest night ≤ 2 °C) / medium (≤ 5 °C) / low. Thresholds must be validated by our BA.
 
-### `soil_moisture` – Soil moisture from SMAP ⏳ (optional)
-- **Unit:** m³/m³. Empty unless SMAP data arrives.
-
-### `slope_deg` – How steep the land is ⏳
-- **What it is:** the tilt of the ground (0° = flat).
-- **Why it matters:** on steep land, heavy rain carries away the fertile topsoil (erosion).
-
-### `planting_signal` – Is this a good month to plant? ⏳
-- **What it is:** our traffic light: green (good) / yellow (careful) / red (avoid).
-- **Waiting for:** the crop requirements (`crops.csv`) from our BA.
+### Still pending
+- `soil_moisture` (SMAP, optional), `slope_deg` (slope), `planting_signal` (planting traffic light).
 
 ### Other columns
 - `point_id`: the ID of the point (same as `ID` in `cuadricula.csv`).
-- `lat`, `lon`: the point's coordinates.
-- `year`: the year (only in `app_data_series.csv`).
-- `month`, `month_name`: the month (1–12, Jan–Dec).
-- `climate_point_id`: the 10 km point the weather comes from (internal use).
+- `lat`, `lon`: coordinates.
+- `year`: the year (series and yearly tables).
+- `month`, `month_name`: the month (monthly tables).
+- `climate_point_id`: the 10 km point the weather comes from (internal).
 - `version`: "v2".
 
 ---
 
-## 4. How it all fits together
+## 4. How each value is calculated (our statistics)
 
-> 🌧️ **Rain** = how much water falls
-> 💨 **ETo** = how much water the land loses
-> ⚖️ **Balance** = is there enough? (rain − ETo)
-> 🧽 **Soil wetness** = how much water actually stays for the plants
-> 🌱 **NDVI** = how the plants respond, or whether the soil is bare
-> ⛰️ **Elevation** = how high (and how cold) the land is
-> ❄️ **Frost risk** = will the nights get too cold?
+| Step | Statistic | Variables |
+|---|---|---|
+| Daily → monthly | **Sum** | Rainfall, ETo |
+| Daily → monthly | **Average** | Max/min temperature, soil wetness, radiation |
+| Daily → monthly | **Minimum** | Coldest night |
+| 16 days → monthly | **Average** of cloud-free values | NDVI |
+| Monthly → yearly | **Sum** | Rainfall, ETo, balance |
+| Monthly → yearly | **Average** | Temperatures (`tmean_c`, `tmax_c`, `tmin_c`), soil wetness, NDVI |
+| Monthly → yearly | **Minimum** | Coldest night |
+| 6 years → typical month / typical year | **Average** (coldest night: minimum) | All |
+| Elevation correction | −6.5 °C per 1,000 m | Temperatures |
 
-Together they answer: **"When should I plant, and which rotation protects my soil?"**
+**Rain is added up; temperature is averaged** (adding temperatures makes no sense).
 
 ---
 
-## 5. Important notes
+## 5. Guide for our BA: comparing with ECOCROP
+
+Use **`app_data_annual_normal.csv`** (one row per point):
+
+| ECOCROP field | Our column | Question |
+|---|---|---|
+| `topmn`, `topmx` (ideal temperature) | `tmean_c` | Is the average temperature in the ideal range? |
+| `tmin`, `tmax` (temperature limits) | `tmean_c` | Is it within the limits where the crop can grow? |
+| `altmx` (maximum altitude) | `elevation_m` | Is the point too high for the crop? |
+| `ktmp` (killing temperature) | `tmin_extreme_c` | Does the coldest night drop below it? |
+| `dra` (soil **drainage**, not humidity) | `soil_wetness` | Qualitative risk only: crop needs good drainage + soil often soaked |
+
+⚠️ **Rainfall:** `rain_mm` in the yearly tables is the **total of the year** (about 2,900 mm in Cartago). Do **not** compare it directly with ECOCROP rainfall, or potatoes would look "unsuitable" all over Cartago. Rainfall is compared over the **crop's growing cycle** (about 4 months for potatoes), using `app_data.csv`.
+
+---
+
+## 6. Validation
+
+- **Against NASA:** we re-downloaded NASA POWER data independently and confirmed our rainfall, ETo and soil wetness match the original source exactly.
+- **Yearly tables:** `validar_anual.py` recalculates the yearly values from the monthly data, checks one point by hand, and confirms that higher points are colder.
+- **Satellite vs. ground stations:** satellites cover the whole province; ground stations are more precise but only where they exist. Next step: validate against IMN weather stations.
+
+---
+
+## 7. Important notes
 
 - **Column names will NOT change**; only the empty columns will be filled.
-- **Temperatures are corrected for elevation** using NASADEM (`temp_correction_c` shows the adjustment). Because of this, temperatures will NOT match raw NASA POWER values; rainfall and soil wetness still match exactly.
-- **Validation:** we re-downloaded NASA POWER data independently and confirmed our rainfall, ETo and soil wetness match the original source.
-- **Satellite vs. ground stations:** satellites cover the whole province; ground stations are more precise but only where they exist. Next step: validate against IMN weather stations.
-- **Period:** 2020–2025 (6 years). A "typical month" from 6 years is less solid than one from 30 years.
-- **Frost thresholds are provisional** until our BA validates them.
+- **Temperatures are corrected for elevation** (`temp_correction_c` shows the adjustment), so they will NOT match raw NASA POWER values. Rainfall and soil wetness still match exactly.
+- **Period:** 2020–2025 (6 years). A "typical" month or year from 6 years is less solid than one from 30 years.
