@@ -1,0 +1,6 @@
+# Entorno virtual de Python
+.venv/
+__pycache__/
+
+# Datos crudos (pesados)
+pipeline/data/raw/
