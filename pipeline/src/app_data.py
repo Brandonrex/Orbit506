@@ -16,7 +16,8 @@ FUTURE_COLUMNS = ["elevation_m", "ndvi", "soil_moisture", "slope_deg",
 climate = pd.read_csv("pipeline/data/processed/power_10km_mensual.csv", parse_dates=["date"])
 climate = climate.rename(columns={"punto_id": "point_id",
                                   "lluvia_mm": "rain_mm",
-                                  "tmin_extrema_c": "tmin_extreme_c"})
+                                  "tmin_extrema_c": "tmin_extreme_c",
+                                  "humedad_raiz": "soil_wetness"})
 climate = climate[climate["date"] >= "2020-01-01"].copy()
 climate["month"] = climate["date"].dt.month
 climate["days"] = climate["date"].dt.days_in_month
@@ -38,7 +39,8 @@ normal = (
          tmin_c=("tmin_c", "mean"),
          tmin_extreme_c=("tmin_extreme_c", "min"),   # coldest night on record
          eto_mm=("eto_mm", "mean"),
-         balance_mm=("balance_mm", "mean"))
+         balance_mm=("balance_mm", "mean"),
+         soil_wetness=("soil_wetness", "mean"))
     .reset_index()
     .rename(columns={"point_id": "climate_point_id"})
 )
@@ -63,7 +65,7 @@ app["version"] = "preliminary"
 
 # 7. Sort and save
 columns = ["point_id", "lat", "lon", "month", "month_name",
-           "rain_mm", "tmax_c", "tmin_c", "tmin_extreme_c", "eto_mm", "balance_mm",
+           "rain_mm", "tmax_c", "tmin_c", "tmin_extreme_c", "eto_mm", "balance_mm", "soil_wetness",
            *FUTURE_COLUMNS, "climate_point_id", "version"]
 app = app[columns].sort_values(["point_id", "month"]).round(1)
 app.to_csv("pipeline/data/processed/app_data.csv", index=False)
@@ -75,7 +77,7 @@ print(app[app["point_id"] == 1][["month_name", "rain_mm", "tmin_c", "eto_mm", "b
 
 # 8. TABLE 2: series by year and month (2020-2025), not averaged
 series = climate[["point_id", "date", "month", "rain_mm", "tmax_c", "tmin_c",
-                  "tmin_extreme_c", "eto_mm", "balance_mm"]].rename(
+                  "tmin_extreme_c", "eto_mm", "balance_mm", "soil_wetness"]].rename(
     columns={"point_id": "climate_point_id"})
 series["year"] = series["date"].dt.year
 
@@ -86,7 +88,7 @@ for col in FUTURE_COLUMNS:
 app_series["version"] = "preliminary"
 
 series_columns = ["point_id", "lat", "lon", "year", "month", "month_name",
-                  "rain_mm", "tmax_c", "tmin_c", "tmin_extreme_c", "eto_mm", "balance_mm",
+                  "rain_mm", "tmax_c", "tmin_c", "tmin_extreme_c", "eto_mm", "balance_mm", "soil_wetness",
                   *FUTURE_COLUMNS, "climate_point_id", "version"]
 app_series = app_series[series_columns].sort_values(["point_id", "year", "month"]).round(1)
 app_series.to_csv("pipeline/data/processed/app_data_series.csv", index=False)

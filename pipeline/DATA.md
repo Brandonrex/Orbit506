@@ -80,6 +80,13 @@ A plain-language guide to our data. No farming background needed.
   - **Negative (−):** the land loses more than it gets → plants may lack water.
 - **Why it matters:** it is the simplest way to show a farmer when water is short or too much.
 
+### `soil_wetness` – How full the soil "sponge" is (NASA POWER)
+- **What it is:** how much water the root zone (top ~1 m of soil) holds, compared to its maximum. Think of the soil as a sponge: 0 = completely dry, 1 = completely soaked.
+- **Unit:** 0 to 1 (no unit).
+- **Source:** NASA POWER, variable `GWETROOT` (from the MERRA-2 model). Coarse (~50 km).
+- **Why it matters:** it shows whether the soil keeps enough water for the roots. Very low = plants may suffer; very close to 1 = soaked soil (in steep areas, more risk of erosion and landslides).
+- **Not the same as `soil_moisture`:** that column will hold SMAP data (m³/m³), which is finer (~9 km). Comparing both is part of our data integration.
+
 ### `elevation_m` – How high the place is
 - **What it is:** meters above sea level.
 - **Why it matters:** the higher you go, the colder it gets (about 6.5 °C colder per 1,000 m). We use it to correct the temperatures and to estimate frost risk.

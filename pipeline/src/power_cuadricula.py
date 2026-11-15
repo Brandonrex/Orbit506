@@ -50,6 +50,7 @@ mensual = (
         tmin_extrema_c=("T2M_MIN", "min"),       # la noche más fría del mes
         rad_toa=("TOA_SW_DWN", "mean"),          # radiación en el tope de la atmósfera
         rad_suelo=("ALLSKY_SFC_SW_DWN", "mean"), # radiación que llega al suelo
+        humedad_raiz=("GWETROOT", "mean"),       # humedad del suelo (0 a 1)
     )
     .round(2)
     .reset_index()

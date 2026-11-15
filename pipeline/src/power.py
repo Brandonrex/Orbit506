@@ -15,6 +15,7 @@ PARAMS = [
     "RH2M",               # humedad del aire (%)
     "ALLSKY_SFC_SW_DWN",  # radiación solar que llega al suelo
     "TOA_SW_DWN",         # radiación en el tope de la atmósfera (para calcular ETo)
+    "GWETROOT",           # humedad del suelo en las raíces (0 = seco, 1 = saturado)
 ]
 
 def fetch_power(lat, lon, start, end, mostrar_unidades=False):
