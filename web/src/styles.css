@@ -5,80 +5,106 @@
 
 @custom-variant dark (&:is(.dark *));
 
-
+/*
+ * Palette and type follow the Figma design (Field Shift design system):
+ * primary #245c43, background #f8faf7, text #24352c / #526258, border #cfd9d0, sage #dcebe0.
+ */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.809 0.105 251.813);
-  --chart-2: oklch(0.623 0.214 259.815);
-  --chart-3: oklch(0.546 0.245 262.881);
-  --chart-4: oklch(0.488 0.243 264.376);
-  --chart-5: oklch(0.424 0.199 265.638);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --radius: 0.75rem; /* lg = 12px (cards), md = 10px, sm = 8px (buttons, inputs), xl = 16px */
+  --background: #f8faf7;
+  --foreground: #24352c;
+  --card: #ffffff;
+  --card-foreground: #24352c;
+  --popover: #ffffff;
+  --popover-foreground: #24352c;
+  --primary: #245c43;
+  --primary-foreground: #ffffff;
+  --primary-hover: #194631;
+  --secondary: #dcebe0;
+  --secondary-foreground: #173d2c;
+  --muted: #eef3ef;
+  --muted-foreground: #526258;
+  --accent: #dcebe0;
+  --accent-foreground: #173d2c;
+  --destructive: #a12b2b;
+  --destructive-foreground: #ffffff;
+  --destructive-subtle: #fbe8e7;
+  --destructive-text: #8d2424;
+  --border: #cfd9d0;
+  --border-strong: #a7bdad;
+  --input: #aab8ae;
+  --ring: #245c43;
+  --sage-text: #173d2c;
+  --sage-border: #bfd3c4;
+  --sage-dashed: #9fbaa7;
+  --olive: #657a32;
+  --chart-1: #245c43;
+  --chart-2: #657a32;
+  --chart-3: #315f78;
+  --chart-4: #c77916;
+  --chart-5: #9fbaa7;
+  --shadow-sm: 0 1px 3px rgb(36 53 44 / 0.08);
+  --shadow-md: 0 12px 32px rgb(36 53 44 / 0.1);
+  --shadow-modal: 0 16px 48px rgb(0 0 0 / 0.12);
+  --sidebar: #ffffff;
+  --sidebar-foreground: #24352c;
+  --sidebar-primary: #245c43;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #dcebe0;
+  --sidebar-accent-foreground: #173d2c;
+  --sidebar-border: #cfd9d0;
+  --sidebar-ring: #245c43;
 }
 
+/* Dark mode: the design only ships a light theme; this is the same palette inverted on deep greens. */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.205 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.809 0.105 251.813);
-  --chart-2: oklch(0.623 0.214 259.815);
-  --chart-3: oklch(0.546 0.245 262.881);
-  --chart-4: oklch(0.488 0.243 264.376);
-  --chart-5: oklch(0.424 0.199 265.638);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: #111915;
+  --foreground: #e6eee8;
+  --card: #18231d;
+  --card-foreground: #e6eee8;
+  --popover: #18231d;
+  --popover-foreground: #e6eee8;
+  --primary: #357d5a;
+  --primary-foreground: #ffffff;
+  --primary-hover: #3f8f68;
+  --secondary: #23362b;
+  --secondary-foreground: #cfe4d6;
+  --muted: #1f2c25;
+  --muted-foreground: #9fb1a5;
+  --accent: #23362b;
+  --accent-foreground: #cfe4d6;
+  --destructive: #e07070;
+  --destructive-foreground: #1a0d0d;
+  --destructive-subtle: #3a1d1d;
+  --destructive-text: #f0a3a3;
+  --border: #2c3d33;
+  --border-strong: #4a6354;
+  --input: #3c5245;
+  --ring: #6fb38f;
+  --sage-text: #cfe4d6;
+  --sage-border: #2f4a3a;
+  --sage-dashed: #4f6e5b;
+  --olive: #a9bf6d;
+  --chart-1: #6fb38f;
+  --chart-2: #a9bf6d;
+  --chart-3: #7fb0cc;
+  --chart-4: #e3a04a;
+  --chart-5: #4f6e5b;
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 0.3);
+  --shadow-md: 0 12px 32px rgb(0 0 0 / 0.35);
+  --shadow-modal: 0 16px 48px rgb(0 0 0 / 0.5);
+  --sidebar: #18231d;
+  --sidebar-foreground: #e6eee8;
+  --sidebar-primary: #6fb38f;
+  --sidebar-primary-foreground: #0d1a13;
+  --sidebar-accent: #23362b;
+  --sidebar-accent-foreground: #cfe4d6;
+  --sidebar-border: #2c3d33;
+  --sidebar-ring: #6fb38f;
 }
-
 
 @theme inline {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -87,6 +113,7 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -95,18 +122,29 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-subtle: var(--destructive-subtle);
+  --color-destructive-text: var(--destructive-text);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-sage-text: var(--sage-text);
+  --color-sage-border: var(--sage-border);
+  --color-sage-dashed: var(--sage-dashed);
+  --color-olive: var(--olive);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --shadow-soft: var(--shadow-sm);
+  --shadow-lift: var(--shadow-md);
+  --shadow-modal: var(--shadow-modal);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: 20px;
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -117,52 +155,149 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
-
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    min-width: 320px;
+  }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
+    font-size: 16px;
+    line-height: 1.625;
+    margin: 0;
   }
 
-  input[type="number"]::-webkit-inner-spin-button,
-  input[type="number"]::-webkit-outer-spin-button {
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
     -webkit-appearance: none;
     margin: 0;
   }
 
-  input[type="number"] {
+  input[type='number'] {
     -moz-appearance: textfield;
     appearance: textfield; /* Added for general compatibility */
   }
 }
-/* ---------- Adaptive Farming app tokens (restyle from Figma here) ---------- */
+
+/* ---------- Map tokens (canvas layers read these via getComputedStyle) ---------- */
 :root {
-  /* Map overlays (canvas reads these via getComputedStyle) */
   --map-cell-stroke: oklch(1 0 0);
   --map-cell-active-stroke: oklch(0.985 0 0);
   --map-property-stroke: oklch(1 0 0);
   --map-aoi-stroke: oklch(0.97 0.02 95);
+  --map-boundary: #245c43;
 }
 
-html,
-body {
-  overflow: hidden;
-  height: 100%;
-  margin: 0;
+/* ---------- Leaflet, styled after the design ---------- */
+.leaflet-container {
+  font-family: inherit;
+  background: var(--secondary);
 }
 
-/* Leaflet tooltips follow the theme */
 .leaflet-tooltip {
   background: var(--popover);
   color: var(--popover-foreground);
   border: 1px solid var(--border);
-  border-radius: calc(var(--radius) - 2px);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
   font-size: 12px;
   line-height: 1.35;
 }
-.leaflet-container {
+
+.leaflet-bar,
+.leaflet-control-layers {
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  box-shadow: var(--shadow-md) !important;
+  overflow: hidden;
+}
+
+.leaflet-bar a,
+.leaflet-control-zoom a {
+  color: var(--foreground) !important;
+  background: rgb(255 255 255 / 0.96);
+  border-bottom-color: var(--border) !important;
+}
+
+.leaflet-bar a:hover {
+  background: var(--background);
+}
+
+.leaflet-control-layers {
+  background: rgb(255 255 255 / 0.96);
+  color: var(--foreground);
+  font-size: 12px;
+}
+
+.leaflet-control-attribution {
   font-family: inherit;
-  background: var(--muted);
+  font-size: 9px;
+}
+
+/* Location marker (teardrop) and boundary vertices from the design. */
+.af-marker,
+.af-vertex {
+  background: transparent;
+  border: 0;
+}
+
+.af-marker > span {
+  background: var(--primary);
+  border: 3px solid #fff;
+  border-radius: 50% 50% 50% 0;
+  box-shadow: 0 4px 14px rgb(23 61 44 / 0.3);
+  display: block;
+  height: 34px;
+  position: relative;
+  transform: rotate(-45deg);
+  width: 34px;
+}
+
+.af-marker > span > span {
+  background: #fff;
+  border-radius: 50%;
+  height: 10px;
+  left: 9px;
+  position: absolute;
+  top: 9px;
+  width: 10px;
+}
+
+.af-vertex span {
+  background: #fff;
+  border: 3px solid var(--primary);
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgb(36 53 44 / 0.25);
+  display: block;
+  height: 16px;
+  width: 16px;
+}
+
+/* Geoman edit handles: same look as the design's boundary vertices. */
+.leaflet-pm-draggable.marker-icon {
+  background: #fff !important;
+  border: 3px solid var(--primary) !important;
+  border-radius: 50% !important;
+  box-shadow: 0 2px 8px rgb(36 53 44 / 0.25);
+  height: 16px !important;
+  margin-left: -8px !important;
+  margin-top: -8px !important;
+  width: 16px !important;
+}
+
+.leaflet-pm-draggable.marker-icon-middle {
+  background: rgb(255 255 255 / 0.85) !important;
+  border: 2px solid var(--primary) !important;
+  height: 10px !important;
+  margin-left: -5px !important;
+  margin-top: -5px !important;
+  opacity: 0.85;
+  width: 10px !important;
+}
+
+.af-crosshair .leaflet-container,
+.af-crosshair.leaflet-container {
+  cursor: crosshair;
 }

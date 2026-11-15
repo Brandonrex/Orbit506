@@ -9,11 +9,13 @@ export const buttonVariants = cva(
   {
     variants: {
       zType: {
-        default: 'bg-primary text-primary-foreground [a]:hover:bg-primary/80',
+        default:
+          'bg-primary text-primary-foreground shadow-soft hover:bg-primary-hover hover:shadow-lift active:shadow-soft [a]:hover:bg-primary-hover',
+        danger: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
         destructive:
           'bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40',
         outline:
-          'border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50',
+          'border-border bg-card hover:border-primary hover:bg-background hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50',
         secondary:
           'bg-secondary text-secondary-foreground hover:bg-secondary/80 aria-expanded:bg-secondary aria-expanded:text-secondary-foreground',
         ghost:
@@ -25,6 +27,8 @@ export const buttonVariants = cva(
         xs: "h-6 gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-xs in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pe-1.5 has-data-[icon=inline-start]:ps-1.5 [&_svg:not([class*='size-'])]:size-3",
         sm: "h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pe-1.5 has-data-[icon=inline-start]:ps-1.5 [&_svg:not([class*='size-'])]:size-3.5",
         lg: 'h-9 gap-1.5 px-2.5 has-data-[icon=inline-end]:pe-2 has-data-[icon=inline-start]:ps-2',
+        /** Design's main action size: 48px tall, bold 14px label. */
+        xl: "min-h-12 gap-2 px-5 py-2 text-sm font-bold [&_svg:not([class*='size-'])]:size-[18px]",
         icon: 'size-8',
         'icon-xs':
           "size-6 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:size-3",
@@ -32,7 +36,7 @@ export const buttonVariants = cva(
         'icon-lg': 'size-9',
       },
       zShape: {
-        default: 'rounded-md',
+        default: 'rounded-sm',
         circle: 'rounded-full',
         square: 'rounded-none',
       },

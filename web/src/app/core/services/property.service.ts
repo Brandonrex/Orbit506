@@ -1,5 +1,4 @@
-import { computed, effect, inject, Injectable, signal, untracked } from '@angular/core';
-import { Router } from '@angular/router';
+import { computed, inject, Injectable, signal } from '@angular/core';
 import { area, kinks } from '@turf/turf';
 import type { Feature, GeoJsonObject, MultiPolygon, Polygon } from 'geojson';
 
@@ -26,12 +25,12 @@ export interface ParsedFeature {
  * Signal store for the farmer's saved properties (persisted by the API in SQLite).
  *
  * `feature()` is the ACTIVE property: AnalysisService and the dashboard only read that, so
- * selecting another property recomputes the whole analysis for it.
+ * selecting another property recomputes the whole analysis for it. The land page (`/lands/:id`)
+ * selects its id; `/region` selects null (whole data area).
  */
 @Injectable({ providedIn: 'root' })
 export class PropertyService {
   private readonly api = inject(PropertyApiService);
-  private readonly router = inject(Router);
   private readonly toast = inject(ZardSonnerService);
 
   readonly properties = signal<SavedProperty[]>([]);
@@ -61,19 +60,6 @@ export class PropertyService {
   /** Latest request number per property, so a slow older PATCH can't roll back a newer edit. */
   private readonly seq = new Map<number, number>();
 
-  constructor() {
-    // Keep ?p=<id> in the URL in sync with the active property.
-    effect(() => {
-      const id = this.activeId();
-      if (this.status() !== 'ready') {
-        return;
-      }
-      untracked(
-        () => void this.router.navigate([], { queryParams: { p: id }, queryParamsHandling: 'merge', replaceUrl: true }),
-      );
-    });
-  }
-
   async load(): Promise<void> {
     if (this.status() === 'loading' || this.status() === 'ready') {
       return;
@@ -85,8 +71,9 @@ export class PropertyService {
         list = await this.migrateLegacy();
       }
       this.properties.set(list);
-      const wanted = Number(new URLSearchParams(location.search).get('p'));
-      this.activeId.set(list.find(p => p.id === wanted)?.id ?? list[0]?.id ?? null);
+      // The land page selects its own id from the route; until then the first land is active.
+      const current = this.activeId();
+      this.activeId.set(list.some(p => p.id === current) ? current : (list[0]?.id ?? null));
       this.status.set('ready');
     } catch (err) {
       this.offlineReason.set(err instanceof ApiError ? err.reason : 'unknown');

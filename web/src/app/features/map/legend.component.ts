@@ -10,9 +10,9 @@ import type { RenderMode } from '@/core/models';
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'block' },
   template: `
-    <div class="bg-card/95 text-card-foreground rounded-lg border p-3 text-xs shadow-md" (mouseleave)="hoverClass.emit(null)">
+    <div class="text-xs" (mouseleave)="hoverClass.emit(null)">
       <div class="mb-2 flex items-baseline justify-between gap-2">
-        <span class="text-sm font-semibold">{{ title() }}</span>
+        <span class="text-[15px] font-bold tracking-[-0.015em]">{{ title() }}</span>
         <span class="text-muted-foreground">{{ unit() }}</span>
       </div>
 
@@ -24,13 +24,15 @@ import type { RenderMode } from '@/core/models';
       <ul class="space-y-0.5">
         @for (c of classes(); track c.label; let i = $index) {
           <li
-            class="hover:bg-accent flex cursor-default items-center gap-2 rounded px-1 py-0.5"
+            class="hover:bg-accent flex min-h-7 cursor-default items-center gap-2 rounded-[6px] px-1.5 py-1"
             [class.bg-accent]="hovered() === i"
             (mouseenter)="hoverClass.emit(i)"
           >
-            <span class="size-3 shrink-0 rounded-sm border" [style.background]="c.color"></span>
-            <span class="font-medium">{{ c.label }}</span>
-            <span class="text-muted-foreground truncate">{{ c.meaning }}</span>
+            <span class="mt-0.5 size-3 shrink-0 self-start rounded-sm border" [style.background]="c.color"></span>
+            <span class="flex min-w-0 flex-col leading-snug">
+              <span class="font-semibold">{{ c.label }}</span>
+              <span class="text-muted-foreground">{{ c.meaning }}</span>
+            </span>
           </li>
         }
       </ul>

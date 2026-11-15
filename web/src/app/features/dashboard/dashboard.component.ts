@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
-import { provideIcons } from '@ng-icons/core';
+import { NgIcon, provideIcons } from '@ng-icons/core';
 import { lucideMapPinOff, lucideTriangleAlert } from '@ng-icons/lucide';
 
 import { classesFor, unitFor, VAR_BY_KEY, type VarDef } from '@/core/config/indices';
@@ -23,6 +23,7 @@ import { type ProfilePoint, ProfileChartComponent } from './profile-chart.compon
 @Component({
   selector: 'af-dashboard',
   imports: [
+    NgIcon,
     ZardCardImports,
     ZardEmptyComponent,
     ZardSkeletonComponent,
@@ -34,9 +35,9 @@ import { type ProfilePoint, ProfileChartComponent } from './profile-chart.compon
   ],
   providers: [provideIcons({ lucideTriangleAlert, lucideMapPinOff })],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { class: 'block h-full overflow-y-auto bg-muted/40' },
+  host: { class: 'block' },
   template: `
-    <div class="space-y-3 p-3">
+    <div class="space-y-5">
       @switch (data.status()) {
         @case ('error') {
           <z-empty zIcon="lucideTriangleAlert" [zTitle]="d.loadingError" [zDescription]="data.error() ?? ''" />
@@ -44,23 +45,17 @@ import { type ProfilePoint, ProfileChartComponent } from './profile-chart.compon
         @case ('ready') {
           <!-- Scope banner -->
           @if (!analysis.isPropertyScope()) {
-            <div class="bg-card text-card-foreground rounded-lg border border-dashed px-3 py-2 text-sm">
+            <div class="bg-background text-muted-foreground flex items-center gap-2 rounded-sm border px-4 py-3 text-[13px]">
+              <ng-icon name="fsInfo" size="17" class="text-primary shrink-0" />
               {{ d.regionBanner }}
             </div>
           }
 
-          <div class="flex items-baseline justify-between">
-            <h2 class="min-w-0 truncate text-base font-semibold">
-              {{ analysis.isPropertyScope() ? (property.active()?.name ?? d.propertyTitle) : d.regionTitle }}
-            </h2>
-            <span class="text-muted-foreground text-xs">{{ periodLabel() }}</span>
-          </div>
-
           @if (analysis.isEmpty()) {
-            <z-empty class="bg-card rounded-lg border" zIcon="lucideMapPinOff" [zTitle]="d.emptyTitle" [zDescription]="d.emptyDescription" />
+            <z-empty class="bg-card shadow-soft rounded-lg border" zIcon="lucideMapPinOff" [zTitle]="d.emptyTitle" [zDescription]="d.emptyDescription" />
           } @else {
             <!-- KPIs -->
-            <div class="grid grid-cols-2 gap-2 xl:grid-cols-3">
+            <div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
               @if (analysis.isPropertyScope()) {
                 <af-kpi-card [label]="d.area" [value]="fmt(property.areaHa(), 2)" [unit]="u.ha" [sub]="fmt(property.areaMz(), 2) + ' ' + u.mz" />
                 <af-kpi-card [label]="d.cells" [value]="'' + scopeCount()" [sub]="d.cellsSub(scopeCount())" />
@@ -86,6 +81,7 @@ import { type ProfilePoint, ProfileChartComponent } from './profile-chart.compon
               <af-kpi-card [label]="d.waterDeficit" [value]="fmt(k().waterDeficitPct, 0)" unit="%" [sub]="d.waterDeficitSub" />
             </div>
 
+            <div class="grid items-start gap-5 lg:grid-cols-2">
             <!-- Class distribution -->
             <z-card>
               <z-card-header>
@@ -131,7 +127,7 @@ import { type ProfilePoint, ProfileChartComponent } from './profile-chart.compon
 
             <!-- Cells table -->
             @if (analysis.isPropertyScope()) {
-              <z-card>
+              <z-card class="lg:col-span-2">
                 <z-card-header>
                   <z-card-title [zTitle]="d.cellsTable" />
                   <z-card-description [zDescription]="d.weightingNote" />
@@ -170,12 +166,13 @@ import { type ProfilePoint, ProfileChartComponent } from './profile-chart.compon
                 </z-card-content>
               </z-card>
             }
+            </div>
           }
         }
         @default {
-          <div class="grid grid-cols-2 gap-2">
-            @for (i of [1, 2, 3, 4, 5, 6]; track i) {
-              <z-skeleton class="h-20 rounded-lg" />
+          <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            @for (i of [1, 2, 3, 4, 5, 6, 7, 8]; track i) {
+              <z-skeleton class="h-24 rounded-lg" />
             }
           </div>
           <z-skeleton class="h-32 rounded-lg" />
@@ -200,12 +197,6 @@ export class DashboardComponent {
 
   protected readonly k = this.analysis.kpis;
   protected readonly scopeCount = computed(() => this.analysis.scope().length);
-
-  protected readonly periodLabel = computed(() =>
-    this.ui.period() === 'normal'
-      ? STRINGS.header.annualNormal
-      : `${STRINGS.monthsLong[this.ui.month() - 1]} · ${STRINGS.header.typicalMonth.toLowerCase()}`,
-  );
 
   protected readonly unitSuffix = computed(() => {
     // The profile is always monthly, so show the monthly unit there.

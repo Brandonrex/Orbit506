@@ -13,7 +13,7 @@ export interface KpiBadge {
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'block' },
   template: `
-    <div class="bg-card text-card-foreground flex h-full flex-col gap-1 rounded-lg border p-3">
+    <div class="bg-card text-card-foreground shadow-soft flex h-full flex-col gap-1 rounded-lg border p-4">
       <div class="text-muted-foreground flex items-center justify-between gap-2 text-xs">
         <span>{{ label() }}</span>
         @if (badge(); as b) {
@@ -25,7 +25,7 @@ export interface KpiBadge {
           >
         }
       </div>
-      <div class="text-xl font-semibold tabular-nums">
+      <div class="text-2xl font-semibold tracking-[-0.02em] tabular-nums">
         {{ value() }}
         @if (unit()) {
           <span class="text-muted-foreground text-sm font-normal">{{ unit() }}</span>

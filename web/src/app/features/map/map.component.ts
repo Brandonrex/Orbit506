@@ -11,6 +11,9 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
+import { Router } from '@angular/router';
+import { NgIcon, provideIcons } from '@ng-icons/core';
+import { lucideMove, lucidePencil } from '@ng-icons/lucide';
 import type { Polygon } from 'geojson';
 import type * as Leaflet from 'leaflet';
 
@@ -22,11 +25,10 @@ import { AnalysisService, fmt } from '@/core/services/analysis.service';
 import { DataService } from '@/core/services/data.service';
 import { PropertyService } from '@/core/services/property.service';
 import { UiStateService } from '@/core/services/ui-state.service';
-import { classIndex, cssToken, rampColor, rampGradient, rampStops } from '@/core/utils/color';
-import { ZardSonnerService } from '@/shared/components/sonner';
+import { classIndex, cssToken, rampColor, rampStops } from '@/core/utils/color';
 
-import { LegendComponent } from './legend.component';
 import { L } from './leaflet';
+import { MAP_HINT_CLASS, MAP_TOOL_CLASS, MAP_TOOLBAR_CLASS } from './map-ui';
 
 const EDIT_DEBOUNCE_MS = 150;
 /** Property outlines sit above the cell canvas (overlayPane = 400) and below markers (600). */
@@ -40,54 +42,61 @@ interface PropertyLayer {
   name: string;
 }
 
+/** Boundary tool in use on the active land (Geoman global edit / drag mode). */
+type EditTool = 'edit' | 'move' | null;
+
+/**
+ * Analysis map: environmental grid cells, the saved lands and the active land's boundary.
+ * Layout follows the Figma land map card: the map, a floating text toolbar (top-right) with the
+ * boundary tools, and an instruction strip underneath. Its height comes from the `--map-h` CSS
+ * variable set by the parent.
+ */
 @Component({
   selector: 'af-map',
-  imports: [LegendComponent],
+  imports: [NgIcon],
+  providers: [provideIcons({ lucideMove, lucidePencil })],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { class: 'block relative h-full w-full' },
+  host: { class: 'block' },
   template: `
-    <div #mapEl class="absolute inset-0"></div>
+    <div class="relative isolate h-(--map-h,380px) w-full">
+      <div #mapEl class="bg-secondary absolute inset-0 z-1" role="application" [attr.aria-label]="mapLabel()"></div>
 
-    @if (data.status() === 'loading') {
-      <div class="bg-background/40 absolute inset-0 z-1000 grid place-items-center">
-        <span class="bg-card text-card-foreground rounded-md px-3 py-2 text-sm shadow">{{ s.map.loading }}</span>
-      </div>
-    }
+      @if (data.status() === 'loading') {
+        <div class="bg-background/40 absolute inset-0 z-1000 grid place-items-center">
+          <span class="bg-card text-card-foreground shadow-lift rounded-sm border px-3 py-2 text-sm">{{ s.map.loading }}</span>
+        </div>
+      }
 
-    @if (data.ready() && !property.hasProperty()) {
-      <div
-        class="bg-card/95 text-card-foreground pointer-events-none absolute top-3 left-1/2 z-1000 -translate-x-1/2 rounded-full px-4 py-1.5 text-sm shadow"
-      >
-        {{ s.map.drawHint }}
-      </div>
-    }
-
-    @if (data.ready()) {
-      <af-legend
-        class="absolute right-3 bottom-8 z-1000 w-64"
-        [title]="ui.activeDef().label"
-        [unit]="unit()"
-        [classes]="ui.activeClasses()"
-        [mode]="ui.renderMode()"
-        [gradient]="gradient()"
-        [rangeLabel]="rangeLabel()"
-        [hovered]="ui.hoveredClass()"
-        [provisional]="ui.activeDef().provisional"
-        [clipToggle]="property.hasProperty()"
-        [fullCells]="ui.fullCells()"
-        (hoverClass)="ui.hoveredClass.set($event)"
-        (fullCellsChange)="ui.fullCells.set($event)"
-      />
-    }
+      @if (property.hasProperty()) {
+        <div role="toolbar" [class]="toolbarClass" [attr.aria-label]="e.toolbar">
+          <button type="button" [class]="toolClass" [attr.aria-pressed]="tool() === 'edit'" (click)="setTool('edit')">
+            <ng-icon name="lucidePencil" size="18" />
+            <span>{{ tool() === 'edit' ? e.done : e.edit }}</span>
+          </button>
+          <button type="button" [class]="toolClass" [attr.aria-pressed]="tool() === 'move'" (click)="setTool('move')">
+            <ng-icon name="lucideMove" size="18" />
+            <span>{{ tool() === 'move' ? e.done : e.move }}</span>
+          </button>
+        </div>
+      }
+    </div>
+    <div [class]="hintClass" aria-live="polite">
+      <ng-icon [name]="tool() ? 'fsPolygon' : 'fsPin'" size="16" class="text-primary shrink-0" />
+      <span>{{ hint() }}</span>
+    </div>
   `,
 })
 export class MapComponent {
   protected readonly s = STRINGS;
+  protected readonly e = STRINGS.edit;
+  protected readonly toolbarClass = MAP_TOOLBAR_CLASS;
+  protected readonly toolClass = MAP_TOOL_CLASS;
+  protected readonly hintClass = MAP_HINT_CLASS;
   protected readonly data = inject(DataService);
   protected readonly property = inject(PropertyService);
   protected readonly ui = inject(UiStateService);
   private readonly analysis = inject(AnalysisService);
-  private readonly toast = inject(ZardSonnerService);
+  private readonly router = inject(Router);
 
   private readonly mapEl = viewChild.required<ElementRef<HTMLDivElement>>('mapEl');
 
@@ -103,7 +112,6 @@ export class MapComponent {
   private propertyLayers = new Map<number, PropertyLayer>();
   /** Active id the layers were last drawn for (undefined = never drawn). */
   private renderedActiveId: number | null | undefined = undefined;
-  private handledDrawRequest = 0;
   private editTimer?: ReturnType<typeof setTimeout>;
   private resizeObserver?: ResizeObserver;
   private fittedToData = false;
@@ -114,12 +122,17 @@ export class MapComponent {
   private readonly cellsVersion = signal(0);
   private readonly clipsVersion = signal(0);
 
-  protected readonly unit = computed(() => unitFor(this.ui.activeDef(), this.ui.period()));
-  protected readonly gradient = computed(() => rampGradient(this.ui.activeDef(), this.ui.period()));
-  protected readonly rangeLabel = computed(() => {
-    const r = this.analysis.activeRange();
-    const d = this.ui.activeDef().decimals;
-    return r ? `${fmt(r.min, d)} – ${fmt(r.max, d)}` : '';
+  protected readonly tool = signal<EditTool>(null);
+  protected readonly hint = computed(() => {
+    if (!this.property.hasProperty()) {
+      return this.e.hintRegion;
+    }
+    const t = this.tool();
+    return t === 'edit' ? this.e.hintEdit : t === 'move' ? this.e.hintMove : this.e.hintIdle;
+  });
+  protected readonly mapLabel = computed(() => {
+    const name = this.property.active()?.name;
+    return name ? STRINGS.land.mapLabel(name) : STRINGS.land.regionTitle;
   });
 
   /** Returns a color for a value under the current variable / period / render mode. */
@@ -263,21 +276,12 @@ export class MapComponent {
       }
       untracked(() => this.renderProperties(list, activeId));
     });
-
-    // "New property" button: start the polygon tool.
-    effect(() => {
-      const n = this.ui.drawRequest();
-      if (!this.mapReady() || n === this.handledDrawRequest) {
-        return;
-      }
-      this.handledDrawRequest = n;
-      untracked(() => this.map?.pm.enableDraw('Polygon'));
-    });
   }
 
   private init(): void {
     const el = this.mapEl().nativeElement;
-    const map = L.map(el, { zoomControl: true, minZoom: 8, maxZoom: 19 });
+    const map = L.map(el, { zoomControl: false, minZoom: 8, maxZoom: 19 });
+    L.control.zoom({ position: 'topleft' }).addTo(map);
 
     const bases: Record<string, Leaflet.TileLayer> = {};
     for (const b of BASEMAPS) {
@@ -289,7 +293,7 @@ export class MapComponent {
       maxZoom: LABELS_OVERLAY.maxZoom,
       pane: 'overlayPane',
     });
-    L.control.layers(bases, { [LABELS_OVERLAY.label]: labels }, { position: 'topright' }).addTo(map);
+    L.control.layers(bases, { [LABELS_OVERLAY.label]: labels }, { position: 'bottomright' }).addTo(map);
     L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(map);
     map.setView([9.8, -83.76], 10);
 
@@ -299,7 +303,7 @@ export class MapComponent {
     this.cellGroup = L.layerGroup().addTo(map);
     this.clipGroup = L.layerGroup().addTo(map);
     this.propertyGroup = L.layerGroup().addTo(map);
-    this.setupGeoman(map);
+    map.pm.setGlobalOptions({ snappable: false, allowSelfIntersection: false });
 
     this.resizeObserver = new ResizeObserver(() => map.invalidateSize());
     this.resizeObserver.observe(el);
@@ -308,55 +312,31 @@ export class MapComponent {
     this.mapReady.set(true);
   }
 
-  private setupGeoman(map: Leaflet.Map): void {
-    map.pm.setGlobalOptions({ snappable: false, allowSelfIntersection: false });
-    map.pm.addControls({
-      position: 'topleft',
-      drawMarker: false,
-      drawCircleMarker: false,
-      drawPolyline: false,
-      drawRectangle: false,
-      drawCircle: false,
-      drawText: false,
-      drawPolygon: true,
-      editMode: true,
-      dragMode: true,
-      cutPolygon: false,
-      removalMode: true,
-      rotateMode: false,
-    });
+  /** Toolbar: toggles Geoman's edit (vertices) or drag mode on the active land; the two are exclusive. */
+  protected setTool(next: Exclude<EditTool, null>): void {
+    const map = this.map;
+    if (!map) {
+      return;
+    }
+    const target: EditTool = this.tool() === next ? null : next;
+    this.disableTools();
+    if (target === 'edit') {
+      map.pm.enableGlobalEditMode();
+    } else if (target === 'move') {
+      map.pm.enableGlobalDragMode();
+    }
+    this.tool.set(target);
+  }
 
-    // A finished drawing becomes a NEW saved property; the store's copy replaces the drawn layer.
-    map.on('pm:create', async e => {
-      const layer = (e as unknown as { layer: Leaflet.Polygon }).layer;
-      const f = layer.toGeoJSON() as PropertyFeature;
-      if (f.geometry.type !== 'Polygon') {
-        layer.remove();
-        return;
-      }
-      const saved = await this.property.create(f);
-      layer.remove();
-      if (saved) {
-        this.toast.success(STRINGS.toasts.saved, { description: saved.name });
-        this.warnIfOutside();
-      }
-    });
-
-    map.on('pm:remove', e => {
-      const layer = (e as unknown as { layer: Leaflet.Layer }).layer;
-      const id = this.idOf(layer);
-      if (id === null) {
-        return;
-      }
-      const name = this.propertyLayers.get(id)?.name ?? '';
-      this.propertyLayers.delete(id);
-      if (confirm(STRINGS.properties.confirmDelete(name))) {
-        void this.property.remove(id);
-      } else {
-        // Put it back.
-        this.renderProperties(this.property.properties(), this.property.activeId());
-      }
-    });
+  private disableTools(): void {
+    const map = this.map;
+    if (map?.pm.globalEditModeEnabled()) {
+      map.pm.disableGlobalEditMode();
+    }
+    if (map?.pm.globalDragModeEnabled()) {
+      map.pm.disableGlobalDragMode();
+    }
+    this.tool.set(null);
   }
 
   private renderProperties(list: SavedProperty[], activeId: number | null): void {
@@ -366,12 +346,7 @@ export class MapComponent {
     const activeChanged = this.renderedActiveId !== activeId;
     if (activeChanged) {
       // Edit / drag mode would otherwise stay bound to the previous property's layer.
-      if (this.map.pm.globalEditModeEnabled()) {
-        this.map.pm.disableGlobalEditMode();
-      }
-      if (this.map.pm.globalDragModeEnabled()) {
-        this.map.pm.toggleGlobalDragMode();
-      }
+      this.disableTools();
     }
 
     const ids = new Set(list.map(p => p.id));
@@ -430,7 +405,7 @@ export class MapComponent {
       };
       layer.on('pm:markerdrag pm:drag pm:edit pm:vertexadded pm:vertexremoved', schedule);
     } else {
-      layer.on('click', () => this.property.select(p.id));
+      layer.on('click', () => void this.router.navigate(['/lands', p.id]));
     }
     layer.addTo(this.propertyGroup!);
     return layer;
@@ -454,17 +429,6 @@ export class MapComponent {
       }
     }
     return null;
-  }
-
-  private warnIfOutside(): void {
-    if (!this.data.ready()) {
-      return;
-    }
-    if (this.analysis.isEmpty()) {
-      this.toast.warning(STRINGS.toasts.fullyOutside);
-    } else if (this.analysis.coverage() < 0.999) {
-      this.toast.warning(STRINGS.toasts.outsideBbox);
-    }
   }
 
   private fitToData(): void {
