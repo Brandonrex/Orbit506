@@ -67,7 +67,7 @@ app["version"] = "preliminary"
 columns = ["point_id", "lat", "lon", "month", "month_name",
            "rain_mm", "tmax_c", "tmin_c", "tmin_extreme_c", "eto_mm", "balance_mm", "soil_wetness",
            *FUTURE_COLUMNS, "climate_point_id", "version"]
-app = app[columns].sort_values(["point_id", "month"]).round(1)
+app = app[columns].sort_values(["point_id", "month"]).round(2)
 app.to_csv("pipeline/data/processed/app_data.csv", index=False)
 
 print("✅ Rows:", len(app), "(expected 192 x 12 = 2304)")
@@ -90,7 +90,7 @@ app_series["version"] = "preliminary"
 series_columns = ["point_id", "lat", "lon", "year", "month", "month_name",
                   "rain_mm", "tmax_c", "tmin_c", "tmin_extreme_c", "eto_mm", "balance_mm", "soil_wetness",
                   *FUTURE_COLUMNS, "climate_point_id", "version"]
-app_series = app_series[series_columns].sort_values(["point_id", "year", "month"]).round(1)
+app_series = app_series[series_columns].sort_values(["point_id", "year", "month"]).round(2)
 app_series.to_csv("pipeline/data/processed/app_data_series.csv", index=False)
 
 print("\n✅ Year x month series - rows:", len(app_series), "(expected 192 x 72 = 13824)")
