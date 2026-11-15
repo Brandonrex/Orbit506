@@ -1,0 +1,19 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {"name": "cartago"},
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-84.12, 9.53],
+          [-83.38, 9.53],
+          [-83.38, 10.07],
+          [-84.12, 10.07],
+          [-84.12, 9.53]
+        ]]
+      }
+    }
+  ]
+}
