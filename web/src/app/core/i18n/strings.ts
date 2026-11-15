@@ -14,9 +14,6 @@ export const STRINGS = {
     renderMode: 'Map colors',
     classes: 'Classes',
     continuous: 'Continuous',
-    importGeojson: 'Import',
-    exportGeojson: 'Export',
-    clearProperty: 'Clear',
   },
 
   months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
@@ -30,11 +27,13 @@ export const STRINGS = {
     provisional: 'Thresholds are provisional',
     noData: 'No data',
     cellNote: 'Each square = one data point (~5 km cell)',
+    clipNote: 'Colors are clipped to the selected property',
+    fullCells: 'Show full cells',
   },
 
   map: {
     loading: 'Loading data…',
-    drawHint: 'Use the polygon tool (top-left) to draw your property',
+    drawHint: 'Use the polygon tool (top-left) or “New property” to draw a property',
     aoi: 'Data area (Cartago)',
   },
 
@@ -43,10 +42,11 @@ export const STRINGS = {
     coords: 'Lat / Lon',
     elevation: 'Elevation',
     period: 'Period',
+    propertyShare: 'Share of property',
   },
 
   dashboard: {
-    regionBanner: 'Showing entire region; draw your property to focus.',
+    regionBanner: 'Showing entire region; select or draw a property to focus.',
     propertyTitle: 'Your property',
     regionTitle: 'Entire region',
     area: 'Area',
@@ -74,6 +74,9 @@ export const STRINGS = {
     propertyMarker: 'Property',
     weightingNote:
       'Data is a ~5 km grid. Property values are area-weighted by how much of the property falls in each cell.',
+    resolutionNote: (n: number) =>
+      `Values come from ${n === 1 ? '1 cell' : `${n} cells`} of ~5 km. Climate comes from a ~10 km grid (NASA POWER, ~50 km), ` +
+      'and NDVI / elevation are sampled at each cell’s center, so they do not yet vary inside the property.',
     emptyTitle: 'No data inside your property',
     emptyDescription: 'The polygon does not overlap the data area (Cartago). Draw it inside the colored cells.',
     loadingError: 'Could not load the data',
@@ -85,9 +88,36 @@ export const STRINGS = {
     fullyOutside: 'The property is outside the data area (Cartago).',
     importError: 'Could not read that file. Use a GeoJSON with a Polygon.',
     imported: 'Property imported',
+    importedMany: (n: number) => `${n} properties imported`,
     saved: 'Property saved',
-    cleared: 'Property removed',
+    deleted: (name: string) => `“${name}” deleted`,
+    apiOffline: 'Cannot reach the server, so changes are not saved. Is the API running?',
+    apiNoProxy: 'The dev server is not forwarding /api to the API. Stop `npm start` (Ctrl+C) and start it again.',
+    saveError: 'Could not save the change',
     dataError: 'Data failed to load',
+  },
+
+  properties: {
+    title: 'Properties',
+    newProperty: 'New property',
+    import: 'Import',
+    exportOne: 'Export',
+    exportAll: 'Export all',
+    region: 'Entire region',
+    regionSub: 'No property selected',
+    loading: 'Loading properties…',
+    emptyTitle: 'No properties yet',
+    emptyDescription: 'Draw a polygon on the map, or import a GeoJSON file.',
+    offlineTitle: 'Cannot reach the server',
+    offlineDescription: 'Start the API (see README) and retry. The map still works.',
+    noProxyDescription:
+      'The web dev server is not forwarding /api to the API. Stop `npm start` (Ctrl+C), start it again, then reload. The map still works.',
+    retry: 'Retry',
+    rename: 'Rename',
+    delete: 'Delete',
+    confirmDelete: (name: string) => `Delete “${name}”? This cannot be undone.`,
+    defaultName: (n: number) => `Property ${n}`,
+    legacyName: 'My property',
   },
 
   units: {

@@ -36,7 +36,18 @@ import type { RenderMode } from '@/core/models';
       </ul>
 
       <div class="text-muted-foreground mt-2 space-y-0.5 border-t pt-2">
-        <div>{{ s.cellNote }}</div>
+        @if (clipToggle()) {
+          <label class="text-card-foreground mb-1 flex cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
+              class="accent-primary size-3.5"
+              [checked]="fullCells()"
+              (change)="fullCellsChange.emit($any($event.target).checked)"
+            />
+            {{ s.fullCells }}
+          </label>
+        }
+        <div>{{ clipToggle() && !fullCells() ? s.clipNote : s.cellNote }}</div>
         @if (provisional()) {
           <div class="italic">⚠ {{ s.provisional }}</div>
         }
@@ -55,6 +66,10 @@ export class LegendComponent {
   readonly rangeLabel = input<string>('');
   readonly hovered = input<number | null>(null);
   readonly provisional = input<boolean>(true);
+  /** Show the "full cells vs clipped to property" switch (only when a property is selected). */
+  readonly clipToggle = input<boolean>(false);
+  readonly fullCells = input<boolean>(false);
 
   readonly hoverClass = output<number | null>();
+  readonly fullCellsChange = output<boolean>();
 }

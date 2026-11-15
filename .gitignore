@@ -4,3 +4,7 @@ __pycache__/
 
 # Datos crudos (pesados)
 pipeline/data/raw/
+
+# API: local SQLite database and test cache
+api/data/
+.pytest_cache/

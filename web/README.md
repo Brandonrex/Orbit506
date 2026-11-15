@@ -2,30 +2,40 @@
 
 This is a browser-only demo. A farmer draws their property on a satellite map and sees vegetation (NDVI) and climate variables for it, both on the map and in a synced dashboard. The data covers **Cartago, Costa Rica** (2020–2025) and comes from `../pipeline/` (see [DATA_NOTES.md](DATA_NOTES.md)).
 
-**Stack:** Angular 22 (standalone, signals, zoneless, strict TS), Zard UI + Tailwind 4, Leaflet 1.9 + Leaflet-Geoman, Turf.js, PapaParse, and ECharts through Zard's Chart component. There is no backend; the property is saved to `localStorage`.
+**Stack:** Angular 22 (standalone, signals, zoneless, strict TS), Zard UI + Tailwind 4, Leaflet 1.9 + Leaflet-Geoman, Turf.js, PapaParse, and ECharts through Zard's Chart component. Saved properties live in a small **FastAPI + SQLite** backend in [`../api/`](../api/). The map and dashboard still work without it, but nothing gets saved.
 
 ## Run it
 
+Two processes: the API (saves properties) and the Angular dev server (proxies `/api` to it, see `proxy.conf.json`).
+
 ```bash
+# 1. API: http://127.0.0.1:8000 (database: api/data/app.db, created on first start)
+cd api
+python -m venv .venv
+.venv/Scripts/python -m pip install -r requirements.txt     # macOS/Linux: .venv/bin/python
+.venv/Scripts/python -m uvicorn app.main:app --reload --port 8000
+.venv/Scripts/python -m pytest                              # API tests
+
+# 2. Web: http://localhost:4200
 cd web
 npm install
-npm start            # = ng serve -> http://localhost:4200
+npm start            # = ng serve
 npm run build        # production build to dist/web
 ```
 
-The prepared data is already committed in `public/data/`, so Python is not needed to run the app.
+The prepared data is already committed in `public/data/`, so Python is only needed for the API and to refresh the data. Set `AF_DB_PATH` to use another database file.
 
 ## Using the app
 
 1. Pick a **variable** (NDVI, rainfall, temperatures, coldest night, frost risk, ETo, water balance, soil wetness or elevation), a **period** (*Typical month* with a month picker, or *Annual normal*), and the **map colors** (*Classes* or *Continuous* ramp).
-2. Draw your property with the **polygon tool** (top-left). Use **edit** to move vertices, **drag** to move the polygon, and **delete** to remove it. Only one property is kept, so drawing a new one replaces the old one.
-3. The dashboard switches from *Entire region* to *Your property*. It shows the area in hectares and manzanas (1 mz = 6,987 m²), the KPIs, the class distribution, a 12-month profile (click a month to select it), the region histogram with your property marked, and the cells under the property.
+2. Click **New property** in the left panel (or use the **polygon tool**, top-left) and draw a polygon. Each drawing becomes a new saved property. Only the **selected** property can be edited: use **edit** to move vertices, **drag** to move it, and **delete** to remove it. Click another outline on the map, or a row in the list, to select it. Choose **Entire region** to clear the selection. Rename, export or delete a property from its row.
+3. The dashboard switches from *Entire region* to the selected property's name, and the map colors only the part of each cell inside it (switch on **Show full cells** in the legend to see the whole squares). It shows the area in hectares and manzanas (1 mz = 6,987 m²), the KPIs, the class distribution, a 12-month profile (click a month to select it), the region histogram with your property marked, and the cells under the property.
 4. Hovering a class in the legend or in the class bar highlights those cells on the map.
-5. Use **Import / Export** for GeoJSON. The property persists across reloads.
+5. **Import** creates one property per polygon in a GeoJSON file (its `name` property is used if present). **Export all** downloads every property. Everything is saved in SQLite, and the selected property is kept in the URL (`?p=<id>`). A polygon saved by the older single-property version (`localStorage`) is moved into the API once, as *My property*.
 
 ### How property values are computed
 
-The data is a **~5 km grid** (192 points). Each point is drawn as its square cell, and a farm usually falls inside 1–2 cells. Property values are **area-weighted**: each cell counts by the share of the property area inside it (`turf.intersect` + `turf.area`). "Coldest night" and "Frost risk" use the **minimum** over the cells instead. With no property drawn, every cell in the region counts equally. In dev mode, the console logs the overlapping cells and their weights for manual checking.
+The data is a **~5 km grid** (192 points, from `pipeline/data/processed/cuadricula.csv`). Its real detail is coarser for some variables: climate comes from the nearest point of a 10 km grid (NASA POWER itself is ~50 km), and NDVI and elevation are each sampled at the cell's center pixel. So values do not change *within* a cell yet; see `api/README.md` for the plan to add raster data. Each point is drawn as its square cell, and a farm usually falls inside 1–2 cells. Property values are **area-weighted**: each cell counts by the share of the property area inside it (`turf.intersect` + `turf.area`). "Coldest night" and "Frost risk" use the **minimum** over the cells instead. With no property drawn, every cell in the region counts equally. In dev mode, the console logs the overlapping cells and their weights for manual checking.
 
 ## Data
 
@@ -63,12 +73,14 @@ src/app/
     utils/color.ts       classify, continuous ramp, CSS-token reader
     services/
       data.service.ts      loads manifest + CSVs, builds cell polygons
-      property.service.ts  polygon signal, validation (turf.kinks), area, localStorage, import/export
+      property.service.ts  saved properties + active one (signals), validation (turf.kinks), import/export
+      property-api.service.ts  HTTP calls to the API (api/app/main.py)
       analysis.service.ts  computed: overlaps & weights, KPIs, class shares, histogram, monthly profile
       ui-state.service.ts  active variable, period, month, render mode, hovered class
   features/
-    layout/    shell (header + resizable map | dashboard), header controls
-    map/       map.component (Leaflet, canvas renderer, Geoman), legend.component
+    layout/    shell (header + resizable properties | map | dashboard), header controls
+    properties/ property-list (saved properties: select, new, rename, import/export, delete)
+    map/       map.component (Leaflet, canvas renderer, Geoman; all properties, clipped cells), legend.component
     dashboard/ dashboard container + dumb kpi-card, class-distribution, histogram, profile-chart
   shared/      Zard UI components (generated by zard-cli; restyle via tokens)
 ```

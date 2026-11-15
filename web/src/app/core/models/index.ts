@@ -1,4 +1,4 @@
-import type { Feature, Polygon } from 'geojson';
+import type { Feature, MultiPolygon, Polygon } from 'geojson';
 
 /** Time view: a typical month (1–12, 2020–2025 average) or the annual normal. */
 export type Period = 'month' | 'normal';
@@ -75,9 +75,29 @@ export interface Overlap {
   areaM2: number;
   /** Share of the property area inside this cell (sums to 1 over the overlaps). */
   weight: number;
+  /** The part of the property inside this cell (drawn on the map instead of the whole cell). */
+  geometry: Feature<Polygon | MultiPolygon>;
 }
 
 export type PropertyFeature = Feature<Polygon>;
+
+/** A property saved in the API (SQLite). Analysis is recomputed client-side from `geometry`. */
+export interface SavedProperty {
+  id: number;
+  name: string;
+  notes: string;
+  geometry: Polygon;
+  /** Geodesic area computed by the API (WGS84). */
+  areaM2: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PropertyPatch {
+  name?: string;
+  notes?: string;
+  geometry?: Polygon;
+}
 
 export interface ClassShare {
   index: number;

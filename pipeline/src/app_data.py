@@ -12,6 +12,11 @@ LAPSE_RATE = 6.5        # °C colder per 1,000 m higher
 FROST_HIGH = 2.0        # coldest night <= 2 °C  -> high frost risk  (PROVISIONAL: BA must validate)
 FROST_MEDIUM = 5.0      # coldest night <= 5 °C  -> medium frost risk (PROVISIONAL: BA must validate)
 
+
+def tidy(df):
+    """2 decimals for values, 4 for lat/lon (the exact grid coordinates, as in cuadricula.csv)."""
+    return df.round({c: 4 if c in ("lat", "lon") else 2 for c in df.columns})
+
 # 1. Monthly climate of the 48 points (NASA POWER), 2020-2025
 climate = pd.read_csv(P + "power_10km_mensual.csv", parse_dates=["date"])
 climate = climate.rename(columns={"punto_id": "climate_point_id",
@@ -73,7 +78,7 @@ final_cols = ["point_id", "lat", "lon", "month", "month_name",
 
 # 9. TABLE 2: year x month
 series_out = series[final_cols[:3] + ["year"] + final_cols[3:]]
-series_out = series_out.sort_values(["point_id", "year", "month"]).round(2)
+series_out = tidy(series_out.sort_values(["point_id", "year", "month"]))
 series_out.to_csv(P + "app_data_series.csv", index=False)
 
 # 10. TABLE 1: typical month (2020-2025 average)
@@ -91,7 +96,7 @@ for c in ["soil_moisture", "slope_deg", "planting_signal"]:
     typical[c] = pd.NA
 typical["month_name"] = typical["month"].map(lambda m: MONTHS[m - 1])
 typical["version"] = "v2"
-typical = typical[final_cols].sort_values(["point_id", "month"]).round(2)
+typical = tidy(typical[final_cols].sort_values(["point_id", "month"]))
 typical.to_csv(P + "app_data.csv", index=False)
 
 # 11. Summary
@@ -118,7 +123,7 @@ yearly = (series.groupby(["point_id", "year"])
                balance_mm=("balance_mm", "sum"),
                soil_wetness=("soil_wetness", "mean"),
                ndvi=("ndvi", "mean"))
-          .reset_index().round(2))
+          .reset_index().pipe(tidy))
 yearly.to_csv(P + "app_data_yearly.csv", index=False)
 
 # 13. TABLE 4: the TYPICAL YEAR per point (average of 2020-2025)
@@ -134,7 +139,7 @@ annual_normal = (yearly.groupby("point_id")
                       balance_mm=("balance_mm", "mean"),
                       soil_wetness=("soil_wetness", "mean"),
                       ndvi=("ndvi", "mean"))
-                 .reset_index().round(2))
+                 .reset_index().pipe(tidy))
 annual_normal.to_csv(P + "app_data_annual_normal.csv", index=False)
 
 print("\n✅ Yearly rows:", len(yearly), "(expected 192 x 6 = 1152)")
