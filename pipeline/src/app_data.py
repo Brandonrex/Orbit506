@@ -1,96 +1,105 @@
 # pipeline/src/app_data.py
-"""Builds app_data.csv: one row per grid point and per month of the year.
-PRELIMINARY VERSION: NASA POWER only. NDVI, SMAP, elevation and slope are left empty."""
+"""Builds app_data.csv (typical month) and app_data_series.csv (year x month).
+Version 2: NASA POWER + elevation (NASADEM) + NDVI (MODIS).
+SMAP soil moisture, slope and planting signal are still empty."""
 import numpy as np
 import pandas as pd
 
+P = "pipeline/data/processed/"
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+LAPSE_RATE = 6.5        # °C colder per 1,000 m higher
+FROST_HIGH = 2.0        # coldest night <= 2 °C  -> high frost risk  (PROVISIONAL: BA must validate)
+FROST_MEDIUM = 5.0      # coldest night <= 5 °C  -> medium frost risk (PROVISIONAL: BA must validate)
 
-# Columns filled later, when the AppEEARS data arrives (empty for now)
-FUTURE_COLUMNS = ["elevation_m", "ndvi", "soil_moisture", "slope_deg",
-                  "frost_risk", "planting_signal"]
-
-# 1. Read the monthly climate of the 48 points (2020-2025 only)
-#    and rename the input columns to English
-climate = pd.read_csv("pipeline/data/processed/power_10km_mensual.csv", parse_dates=["date"])
-climate = climate.rename(columns={"punto_id": "point_id",
+# 1. Monthly climate of the 48 points (NASA POWER), 2020-2025
+climate = pd.read_csv(P + "power_10km_mensual.csv", parse_dates=["date"])
+climate = climate.rename(columns={"punto_id": "climate_point_id",
                                   "lluvia_mm": "rain_mm",
                                   "tmin_extrema_c": "tmin_extreme_c",
                                   "humedad_raiz": "soil_wetness"})
 climate = climate[climate["date"] >= "2020-01-01"].copy()
+climate["year"] = climate["date"].dt.year
 climate["month"] = climate["date"].dt.month
 climate["days"] = climate["date"].dt.days_in_month
 
-# 2. Reference evapotranspiration (ETo) with the Hargreaves equation (FAO)
-#    Daily ETo = 0.0023 x Ra x (Tmean + 17.8) x sqrt(Tmax - Tmin)
-#    Ra = top-of-atmosphere radiation, converted from MJ/m²/day to mm/day (x 0.408)
-tmean = (climate["tmax_c"] + climate["tmin_c"]) / 2
-trange = (climate["tmax_c"] - climate["tmin_c"]).clip(lower=0)
-eto_daily = 0.0023 * (climate["rad_toa"] * 0.408) * (tmean + 17.8) * np.sqrt(trange)
-climate["eto_mm"] = eto_daily * climate["days"]                    # ETo for the whole month
-climate["balance_mm"] = climate["rain_mm"] - climate["eto_mm"]     # + water surplus, - deficit
-
-# 3. "Typical month": average of each month across 2020-2025, for each point
-normal = (
-    climate.groupby(["point_id", "month"])
-    .agg(rain_mm=("rain_mm", "mean"),
-         tmax_c=("tmax_c", "mean"),
-         tmin_c=("tmin_c", "mean"),
-         tmin_extreme_c=("tmin_extreme_c", "min"),   # coldest night on record
-         eto_mm=("eto_mm", "mean"),
-         balance_mm=("balance_mm", "mean"),
-         soil_wetness=("soil_wetness", "mean"))
-    .reset_index()
-    .rename(columns={"point_id": "climate_point_id"})
-)
-
-# 4. Each 5 km point takes the climate of the nearest 10 km point
-grid = pd.read_csv("pipeline/data/processed/cuadricula.csv")
-p10 = climate.groupby("point_id")[["lat", "lon"]].first().reset_index()
+# 2. Grid points: nearest climate point + real elevation
+grid = pd.read_csv(P + "cuadricula.csv")
+p10 = climate.groupby("climate_point_id")[["lat", "lon"]].first().reset_index()
 dist = ((grid["Latitude"].values[:, None] - p10["lat"].values[None, :]) ** 2 +
         (grid["Longitude"].values[:, None] - p10["lon"].values[None, :]) ** 2)
-grid["climate_point_id"] = p10["point_id"].values[dist.argmin(axis=1)]
+grid["climate_point_id"] = p10["climate_point_id"].values[dist.argmin(axis=1)]
 grid = grid.rename(columns={"ID": "point_id", "Latitude": "lat", "Longitude": "lon"})
 grid = grid[["point_id", "lat", "lon", "climate_point_id"]]
+grid = grid.merge(pd.read_csv(P + "elevation.csv"), on="point_id", how="left")
 
-# 5. Join: 192 points x 12 months
-app = grid.merge(normal, on="climate_point_id")
-app["month_name"] = app["month"].map(lambda m: MONTHS[m - 1])
+# 3. Series: each grid point gets its climate point's 72 months
+cols = ["climate_point_id", "elev_power", "date", "year", "month", "days", "rain_mm",
+        "tmax_c", "tmin_c", "tmin_extreme_c", "rad_toa", "soil_wetness"]
+series = grid.merge(climate[cols], on="climate_point_id")
 
-# 6. Future columns (empty for now)
-for col in FUTURE_COLUMNS:
-    app[col] = pd.NA
-app["version"] = "preliminary"
+# 4. Correct temperatures for elevation (NASA POWER averages a ~50 km square)
+series["temp_correction_c"] = -LAPSE_RATE * (series["elevation_m"] - series["elev_power"]) / 1000
+for c in ["tmax_c", "tmin_c", "tmin_extreme_c"]:
+    series[c] = series[c] + series["temp_correction_c"]
 
-# 7. Sort and save
-columns = ["point_id", "lat", "lon", "month", "month_name",
-           "rain_mm", "tmax_c", "tmin_c", "tmin_extreme_c", "eto_mm", "balance_mm", "soil_wetness",
-           *FUTURE_COLUMNS, "climate_point_id", "version"]
-app = app[columns].sort_values(["point_id", "month"]).round(2)
-app.to_csv("pipeline/data/processed/app_data.csv", index=False)
+# 5. ETo (Hargreaves, FAO) with the CORRECTED temperatures, and water balance
+tmean = (series["tmax_c"] + series["tmin_c"]) / 2
+trange = (series["tmax_c"] - series["tmin_c"]).clip(lower=0)
+series["eto_mm"] = (0.0023 * (series["rad_toa"] * 0.408) * (tmean + 17.8)
+                    * np.sqrt(trange) * series["days"])
+series["balance_mm"] = series["rain_mm"] - series["eto_mm"]
 
-print("✅ Rows:", len(app), "(expected 192 x 12 = 2304)")
-print("✅ Points:", app["point_id"].nunique())
-print("\nExample, point 1:")
-print(app[app["point_id"] == 1][["month_name", "rain_mm", "tmin_c", "eto_mm", "balance_mm"]])
+# 6. NDVI (MODIS), monthly average per point
+ndvi = pd.read_csv(P + "ndvi_monthly.csv")[["point_id", "year", "month", "ndvi"]]
+series = series.merge(ndvi, on=["point_id", "year", "month"], how="left")
 
-# 8. TABLE 2: series by year and month (2020-2025), not averaged
-series = climate[["point_id", "date", "month", "rain_mm", "tmax_c", "tmin_c",
-                  "tmin_extreme_c", "eto_mm", "balance_mm", "soil_wetness"]].rename(
-    columns={"point_id": "climate_point_id"})
-series["year"] = series["date"].dt.year
+# 7. Frost risk from the coldest night (corrected)
+def frost(t):
+    return np.select([t <= FROST_HIGH, t <= FROST_MEDIUM], ["high", "medium"], "low")
+series["frost_risk"] = frost(series["tmin_extreme_c"])
 
-app_series = grid.merge(series, on="climate_point_id")
-app_series["month_name"] = app_series["month"].map(lambda m: MONTHS[m - 1])
-for col in FUTURE_COLUMNS:
-    app_series[col] = pd.NA
-app_series["version"] = "preliminary"
+# 8. Columns still waiting for data
+for c in ["soil_moisture", "slope_deg", "planting_signal"]:
+    series[c] = pd.NA
+series["month_name"] = series["month"].map(lambda m: MONTHS[m - 1])
+series["version"] = "v2"
 
-series_columns = ["point_id", "lat", "lon", "year", "month", "month_name",
-                  "rain_mm", "tmax_c", "tmin_c", "tmin_extreme_c", "eto_mm", "balance_mm", "soil_wetness",
-                  *FUTURE_COLUMNS, "climate_point_id", "version"]
-app_series = app_series[series_columns].sort_values(["point_id", "year", "month"]).round(2)
-app_series.to_csv("pipeline/data/processed/app_data_series.csv", index=False)
+final_cols = ["point_id", "lat", "lon", "month", "month_name",
+              "rain_mm", "tmax_c", "tmin_c", "tmin_extreme_c", "eto_mm", "balance_mm",
+              "soil_wetness", "elevation_m", "ndvi", "soil_moisture", "slope_deg",
+              "frost_risk", "planting_signal", "temp_correction_c",
+              "climate_point_id", "version"]
 
-print("\n✅ Year x month series - rows:", len(app_series), "(expected 192 x 72 = 13824)")
+# 9. TABLE 2: year x month
+series_out = series[final_cols[:3] + ["year"] + final_cols[3:]]
+series_out = series_out.sort_values(["point_id", "year", "month"]).round(2)
+series_out.to_csv(P + "app_data_series.csv", index=False)
+
+# 10. TABLE 1: typical month (2020-2025 average)
+typical = (series.groupby(["point_id", "month"])
+           .agg(lat=("lat", "first"), lon=("lon", "first"),
+                rain_mm=("rain_mm", "mean"), tmax_c=("tmax_c", "mean"),
+                tmin_c=("tmin_c", "mean"), tmin_extreme_c=("tmin_extreme_c", "min"),
+                eto_mm=("eto_mm", "mean"), balance_mm=("balance_mm", "mean"),
+                soil_wetness=("soil_wetness", "mean"), elevation_m=("elevation_m", "first"),
+                ndvi=("ndvi", "mean"), temp_correction_c=("temp_correction_c", "mean"),
+                climate_point_id=("climate_point_id", "first"))
+           .reset_index())
+typical["frost_risk"] = frost(typical["tmin_extreme_c"])
+for c in ["soil_moisture", "slope_deg", "planting_signal"]:
+    typical[c] = pd.NA
+typical["month_name"] = typical["month"].map(lambda m: MONTHS[m - 1])
+typical["version"] = "v2"
+typical = typical[final_cols].sort_values(["point_id", "month"]).round(2)
+typical.to_csv(P + "app_data.csv", index=False)
+
+# 11. Summary
+print("✅ Typical month rows:", len(typical), "(expected 2304)")
+print("✅ Series rows:", len(series_out), "(expected 13824)")
+print("🌡️ Temperature correction: from", series["temp_correction_c"].min().round(1),
+      "to", series["temp_correction_c"].max().round(1), "°C")
+print("❄️ Coldest corrected night:", series["tmin_extreme_c"].min().round(1), "°C")
+print("🌱 Months with NDVI:", f"{series['ndvi'].notna().mean():.0%}")
+print("\nFrost risk (typical months):")
+print(typical["frost_risk"].value_counts())
