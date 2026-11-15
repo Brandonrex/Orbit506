@@ -51,7 +51,7 @@ export const STRINGS = {
     regionTitle: 'Entire region',
     area: 'Area',
     cells: 'Data cells',
-    cellsSub: (n: number) => `${n} cell${n === 1 ? '' : 's'} cover the property`,
+    cellsSub: (n: number) => (n === 1 ? '1 cell covers the property' : `${n} cells cover the property`),
     regionCellsSub: 'grid points (~5 km apart)',
     meanNdvi: 'Mean NDVI',
     meanTemp: 'Mean temperature',
@@ -82,6 +82,7 @@ export const STRINGS = {
   toasts: {
     selfIntersection: 'The polygon crosses itself. Please redraw it.',
     outsideBbox: 'Part of the property is outside the data area.',
+    fullyOutside: 'The property is outside the data area (Cartago).',
     importError: 'Could not read that file. Use a GeoJSON with a Polygon.',
     imported: 'Property imported',
     saved: 'Property saved',

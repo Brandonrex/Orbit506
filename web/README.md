@@ -1,59 +1,104 @@
-# Web
+# Adaptive Farming: map + dashboard MVP
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 22.2.7.
+This is a browser-only demo. A farmer draws their property on a satellite map and sees vegetation (NDVI) and climate variables for it, both on the map and in a synced dashboard. The data covers **Cartago, Costa Rica** (2020–2025) and comes from `../pipeline/` (see [DATA_NOTES.md](DATA_NOTES.md)).
 
-## Development server
+**Stack:** Angular 22 (standalone, signals, zoneless, strict TS), Zard UI + Tailwind 4, Leaflet 1.9 + Leaflet-Geoman, Turf.js, PapaParse, and ECharts through Zard's Chart component. There is no backend; the property is saved to `localStorage`.
 
-To start a local development server, run:
-
-```bash
-ng serve
-```
-
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
-
-## Code scaffolding
-
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
+## Run it
 
 ```bash
-ng generate component component-name
+cd web
+npm install
+npm start            # = ng serve -> http://localhost:4200
+npm run build        # production build to dist/web
 ```
 
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
+The prepared data is already committed in `public/data/`, so Python is not needed to run the app.
+
+## Using the app
+
+1. Pick a **variable** (NDVI, rainfall, temperatures, coldest night, frost risk, ETo, water balance, soil wetness or elevation), a **period** (*Typical month* with a month picker, or *Annual normal*), and the **map colors** (*Classes* or *Continuous* ramp).
+2. Draw your property with the **polygon tool** (top-left). Use **edit** to move vertices, **drag** to move the polygon, and **delete** to remove it. Only one property is kept, so drawing a new one replaces the old one.
+3. The dashboard switches from *Entire region* to *Your property*. It shows the area in hectares and manzanas (1 mz = 6,987 m²), the KPIs, the class distribution, a 12-month profile (click a month to select it), the region histogram with your property marked, and the cells under the property.
+4. Hovering a class in the legend or in the class bar highlights those cells on the map.
+5. Use **Import / Export** for GeoJSON. The property persists across reloads.
+
+### How property values are computed
+
+The data is a **~5 km grid** (192 points). Each point is drawn as its square cell, and a farm usually falls inside 1–2 cells. Property values are **area-weighted**: each cell counts by the share of the property area inside it (`turf.intersect` + `turf.area`). "Coldest night" and "Frost risk" use the **minimum** over the cells instead. With no property drawn, every cell in the region counts equally. In dev mode, the console logs the overlapping cells and their weights for manual checking.
+
+## Data
+
+```
+pipeline/data/processed/*.csv  ──(web/scripts/prepare_data.py)──►  web/public/data/
+        (read-only)                                                typical_month.csv
+                                                                   annual_normal.csv
+                                                                   aoi.geojson
+                                                                   manifest.json
+```
+
+To refresh the data after the pipeline changes, run this from the repo root:
 
 ```bash
-ng generate --help
+python web/scripts/prepare_data.py
 ```
 
-## Building
+It uses only the standard library (no pandas). It never writes into `pipeline/`.
 
-To build the project run:
+**To replace the data**, put files with the same columns in `public/data/` and update `manifest.json`: `bbox` `[w, s, e, n]`, `resolution_deg` (cell size), `files` and `ranges` (min/max per variable per period, used by the continuous ramp). The app only reads `public/data/`. `DataService` is the only place that knows about files, so it can later be swapped for an API.
 
-```bash
-ng build
+## Tuning thresholds and colors
+
+All class thresholds, labels and colors live in **`src/app/core/config/indices.ts`**. They are data, not logic, and **provisional**, so the UI says so. Each variable can have different classes per period (e.g. rain in mm/month vs mm/year). The KPI thresholds (`NDVI < 0.4` stressed, `balance < 0` water deficit) and map opacities are in the same file.
+
+## Architecture
+
+```
+src/app/
+  core/
+    models/              types: CellValues, VarKey, Period, Manifest, Overlap…
+    config/indices.ts    variables, classes, colors, KPI thresholds   ← tune here
+    config/basemaps.ts   Esri World Imagery (default), OSM, labels overlay
+    i18n/strings.ts      all UI copy (English; add es-CR with the same shape)
+    utils/color.ts       classify, continuous ramp, CSS-token reader
+    services/
+      data.service.ts      loads manifest + CSVs, builds cell polygons
+      property.service.ts  polygon signal, validation (turf.kinks), area, localStorage, import/export
+      analysis.service.ts  computed: overlaps & weights, KPIs, class shares, histogram, monthly profile
+      ui-state.service.ts  active variable, period, month, render mode, hovered class
+  features/
+    layout/    shell (header + resizable map | dashboard), header controls
+    map/       map.component (Leaflet, canvas renderer, Geoman), legend.component
+    dashboard/ dashboard container + dumb kpi-card, class-distribution, histogram, profile-chart
+  shared/      Zard UI components (generated by zard-cli; restyle via tokens)
 ```
 
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
+State flows one way. Services hold signals, components read `computed()` values, and the map and dashboard never talk to each other directly. Both react to `UiStateService` and `AnalysisService`, which is what keeps them in sync.
 
-## Running unit tests
+**Design handoff (Figma):**
+- Theme colors are the Zard/Tailwind CSS variables in `src/styles.css`, including the `--map-*` tokens for map strokes.
+- Index palettes live only in `indices.ts`.
+- Presentational components (`kpi-card`, `legend`, `class-distribution`, `histogram`, `profile-chart`) take inputs and emit outputs only.
 
-To execute unit tests with the [Vitest](https://vitest.dev/) test runner, use the following command:
+### Leaflet + Geoman note
 
-```bash
-ng test
-```
+Geoman's bundle patches a global `L`. `features/map/leaflet-global.ts` exposes the bundled Leaflet as `globalThis.L` before Geoman loads, so both share the same classes. Always import Leaflet in the app through `features/map/leaflet.ts`.
 
-## Running end-to-end tests
+## Deviations from the original brief (forced by the data)
 
-For end-to-end (e2e) testing, run:
+| Brief | MVP | Why |
+|---|---|---|
+| NDVI / NDMI toggle | Variable selector (NDVI + climate) | The pipeline has no NDMI. |
+| Water-stressed % = NDMI < 0 | Water-deficit % = rain − ETo < 0 | Closest available water-stress proxy. |
+| Points inside the polygon | Area-weighted 5 km cells | A farm rarely contains a grid point. |
+| Hexbin render mode | Dropped | Aggregating 192 cells adds nothing. |
+| Date slider over many dates | Typical month (12) + annual normal | The team chose these two views. The monthly series (72) and yearly tables exist in `pipeline/` and can be added later. |
+| PapaParse `worker: true` | Main-thread parsing | The files are < 300 KB. Switch on if the data grows. |
+| Guatemala / UTM | Costa Rica, WGS84 | Matches the data. No reprojection needed. |
 
-```bash
-ng e2e
-```
+## Known limitations
 
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
-
-## Additional Resources
-
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+- The data is coarse (~5 km). Values describe the area around a farm, not the farm itself.
+- A "typical" month or year comes from only 6 years (2020–2025).
+- Thresholds are provisional and need validation by the BA (see `../pipeline/DATA.md` §5 for ECOCROP comparisons).
+- ECharts logs a harmless "chart instance already initialized" warning from inside Zard's chart wrapper.

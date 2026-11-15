@@ -286,6 +286,9 @@ export const KPI_THRESHOLDS = {
 /** Map styling for cells (opacities only; colors come from the classes above or CSS tokens). */
 export const MAP_STYLE = {
   cellOpacity: 0.65,
+  /** Opacity when zoomed in to farm level (zoom >= closeZoom), so the imagery shows through. */
+  cellOpacityClose: 0.3,
+  closeZoom: 14,
   cellDimmedOpacity: 0.12,
   cellHighlightOpacity: 0.9,
   propertyFillOpacity: 0.06,

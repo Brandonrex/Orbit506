@@ -143,7 +143,9 @@ import { type ProfilePoint, ProfileChartComponent } from './profile-chart.compon
                         <th z-table-head>{{ t.point }}</th>
                         <th z-table-head class="text-right">{{ d.share }}</th>
                         <th z-table-head class="text-right">{{ ui.activeDef().shortLabel }}</th>
-                        <th z-table-head class="text-right">NDVI</th>
+                        @if (ui.activeVar() !== 'ndvi') {
+                          <th z-table-head class="text-right">NDVI</th>
+                        }
                         <th z-table-head class="text-right">{{ t.elevation }}</th>
                       </tr>
                     </thead>
@@ -156,7 +158,9 @@ import { type ProfilePoint, ProfileChartComponent } from './profile-chart.compon
                           </td>
                           <td z-table-cell class="text-right tabular-nums">{{ fmt(r.sharePct, 1) }}%</td>
                           <td z-table-cell class="text-right tabular-nums">{{ fmt(r.value, ui.activeDef().decimals) }}</td>
-                          <td z-table-cell class="text-right tabular-nums">{{ fmt(r.ndvi, 2) }}</td>
+                          @if (ui.activeVar() !== 'ndvi') {
+                            <td z-table-cell class="text-right tabular-nums">{{ fmt(r.ndvi, 2) }}</td>
+                          }
                           <td z-table-cell class="text-right tabular-nums">{{ fmt(r.elevation, 0) }} m</td>
                         </tr>
                       }

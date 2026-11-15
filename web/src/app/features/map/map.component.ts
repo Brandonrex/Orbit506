@@ -88,6 +88,7 @@ export class MapComponent {
   private fittedToData = false;
 
   private readonly mapReady = signal(false);
+  private readonly zoom = signal(10);
   /** Bumped whenever the rectangles are rebuilt so the style effect re-runs. */
   private readonly cellsVersion = signal(0);
 
@@ -148,11 +149,7 @@ export class MapComponent {
           style: { color: cssToken('--map-aoi-stroke', '#ffffff'), weight: 1.5, dashArray: '6 4', fill: false },
         } as Leaflet.GeoJSONOptions).addTo(this.map!);
         if (!this.fittedToData && !this.propertyLayer) {
-          const [w, s, e, n] = manifest.bbox;
-          this.map!.fitBounds([
-            [s, w],
-            [n, e],
-          ]);
+          this.fitToData();
         }
         this.fittedToData = true;
       });
@@ -168,6 +165,8 @@ export class MapComponent {
       const hovered = this.ui.hoveredClass();
       const overlaps = this.analysis.overlapByPoint();
       const hasProperty = this.property.hasProperty();
+      // Zoomed in on a farm, one 5 km cell fills the screen: fade it so the imagery stays visible.
+      const baseOpacity = this.zoom() >= MAP_STYLE.closeZoom ? MAP_STYLE.cellOpacityClose : MAP_STYLE.cellOpacity;
       const stroke = cssToken('--map-cell-stroke', '#ffffff');
       const activeStroke = cssToken('--map-cell-active-stroke', '#ffffff');
 
@@ -175,7 +174,7 @@ export class MapComponent {
         const v = values.get(pointId)?.[field] ?? null;
         const fill = color(v);
         const inProperty = overlaps.has(pointId);
-        let opacity = MAP_STYLE.cellOpacity;
+        let opacity = baseOpacity;
         if (hovered !== null) {
           opacity = classIndex(v, classes) === hovered ? MAP_STYLE.cellHighlightOpacity : MAP_STYLE.cellDimmedOpacity;
         } else if (hasProperty && !inProperty) {
@@ -220,6 +219,7 @@ export class MapComponent {
     L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(map);
     map.setView([9.8, -83.76], 10);
 
+    map.on('zoomend', () => this.zoom.set(map.getZoom()));
     this.cellGroup = L.layerGroup().addTo(map);
     this.setupGeoman(map);
 
@@ -268,6 +268,7 @@ export class MapComponent {
         this.propertyLayer = null;
         this.property.clear('map');
         this.toast.show(STRINGS.toasts.cleared);
+        this.fitToData();
       }
     });
   }
@@ -309,9 +310,16 @@ export class MapComponent {
     if (!this.map) {
       return;
     }
+    const hadLayer = this.propertyLayer !== null;
+    if (this.map.pm.globalEditModeEnabled()) {
+      this.map.pm.disableGlobalEditMode();
+    }
     this.propertyLayer?.remove();
     this.propertyLayer = null;
     if (!feature) {
+      if (hadLayer) {
+        this.fitToData();
+      }
       return;
     }
     const ring = feature.geometry.coordinates[0].map(([lon, lat]) => L.latLng(lat, lon));
@@ -325,8 +333,24 @@ export class MapComponent {
       return;
     }
     this.map.fitBounds(this.propertyLayer.getBounds(), { padding: [60, 60], maxZoom: 16 });
-    if (this.data.ready() && this.analysis.coverage() < 0.999) {
+    if (!this.data.ready()) {
+      return;
+    }
+    if (this.analysis.isEmpty()) {
+      this.toast.warning(STRINGS.toasts.fullyOutside);
+    } else if (this.analysis.coverage() < 0.999) {
       this.toast.warning(STRINGS.toasts.outsideBbox);
+    }
+  }
+
+  private fitToData(): void {
+    const bbox = this.data.manifest()?.bbox;
+    if (this.map && bbox) {
+      const [w, s, e, n] = bbox;
+      this.map.fitBounds([
+        [s, w],
+        [n, e],
+      ]);
     }
   }
 

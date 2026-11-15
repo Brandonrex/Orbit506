@@ -8,7 +8,7 @@ import { ZardSonnerComponent } from './shared/components/sonner';
   imports: [ShellComponent, ZardSonnerComponent],
   template: `
     <af-shell />
-    <z-sonner position="bottom-center" [richColors]="true" />
+    <z-sonner position="bottom-left" [richColors]="true" />
   `,
 })
 export class App {}
