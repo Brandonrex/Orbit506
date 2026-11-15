@@ -1,8 +1,5 @@
 # App data – Cartago
-
-A plain-language guide to our data. No farming background needed.
-
-**Version:** v2 — NASA POWER + NASADEM (elevation) + MODIS (NDVI).
+.
 
 ---
 
