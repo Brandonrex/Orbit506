@@ -1,4 +1,4 @@
-# App data – RotaCR Cartago
+# App data – Cartago
 
 A plain-language guide to our data. No farming background needed.
 
