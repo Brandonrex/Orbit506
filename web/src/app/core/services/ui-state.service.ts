@@ -13,6 +13,10 @@ export class UiStateService {
   readonly renderMode = signal<RenderMode>('classes');
   /** Index of the class being hovered in the legend / class chart, or null. */
   readonly hoveredClass = signal<number | null>(null);
+  /** With a property selected: color the whole ~5 km cells instead of only the part inside the property. */
+  readonly fullCells = signal(false);
+  /** Bumped to ask the map to start drawing a new property polygon. */
+  readonly drawRequest = signal(0);
 
   readonly activeDef = computed(() => VAR_BY_KEY[this.activeVar()]);
   readonly activeClasses = computed(() => classesFor(this.activeDef(), this.period()));

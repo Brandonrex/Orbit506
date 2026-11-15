@@ -11,12 +11,13 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
+import type { Polygon } from 'geojson';
 import type * as Leaflet from 'leaflet';
 
 import { BASEMAPS, LABELS_OVERLAY } from '@/core/config/basemaps';
 import { classesFor, MAP_STYLE, unitFor, VAR_BY_KEY } from '@/core/config/indices';
 import { STRINGS } from '@/core/i18n/strings';
-import type { PropertyFeature } from '@/core/models';
+import type { Overlap, PropertyFeature, SavedProperty } from '@/core/models';
 import { AnalysisService, fmt } from '@/core/services/analysis.service';
 import { DataService } from '@/core/services/data.service';
 import { PropertyService } from '@/core/services/property.service';
@@ -28,6 +29,16 @@ import { LegendComponent } from './legend.component';
 import { L } from './leaflet';
 
 const EDIT_DEBOUNCE_MS = 150;
+/** Property outlines sit above the cell canvas (overlayPane = 400) and below markers (600). */
+const PROPERTY_PANE = 'properties';
+
+interface PropertyLayer {
+  layer: Leaflet.Polygon;
+  /** The geometry object this layer was drawn from (or last pushed); compared by reference. */
+  geometry: Polygon;
+  active: boolean;
+  name: string;
+}
 
 @Component({
   selector: 'af-map',
@@ -62,7 +73,10 @@ const EDIT_DEBOUNCE_MS = 150;
         [rangeLabel]="rangeLabel()"
         [hovered]="ui.hoveredClass()"
         [provisional]="ui.activeDef().provisional"
+        [clipToggle]="property.hasProperty()"
+        [fullCells]="ui.fullCells()"
         (hoverClass)="ui.hoveredClass.set($event)"
+        (fullCellsChange)="ui.fullCells.set($event)"
       />
     }
   `,
@@ -80,17 +94,25 @@ export class MapComponent {
   private map?: Leaflet.Map;
   private readonly renderer = L.canvas({ padding: 0.5 });
   private cellGroup?: Leaflet.LayerGroup;
+  private clipGroup?: Leaflet.LayerGroup;
+  private propertyGroup?: Leaflet.LayerGroup;
   private aoiLayer?: Leaflet.GeoJSON;
   private rects = new Map<number, Leaflet.Rectangle>();
-  private propertyLayer: Leaflet.Polygon | null = null;
+  /** Part of the active property inside each cell, keyed by pointId. */
+  private clips = new Map<number, Leaflet.GeoJSON>();
+  private propertyLayers = new Map<number, PropertyLayer>();
+  /** Active id the layers were last drawn for (undefined = never drawn). */
+  private renderedActiveId: number | null | undefined = undefined;
+  private handledDrawRequest = 0;
   private editTimer?: ReturnType<typeof setTimeout>;
   private resizeObserver?: ResizeObserver;
   private fittedToData = false;
 
   private readonly mapReady = signal(false);
   private readonly zoom = signal(10);
-  /** Bumped whenever the rectangles are rebuilt so the style effect re-runs. */
+  /** Bumped whenever the rectangles / clip pieces are rebuilt so the style effect re-runs. */
   private readonly cellsVersion = signal(0);
+  private readonly clipsVersion = signal(0);
 
   protected readonly unit = computed(() => unitFor(this.ui.activeDef(), this.ui.period()));
   protected readonly gradient = computed(() => rampGradient(this.ui.activeDef(), this.ui.period()));
@@ -134,6 +156,15 @@ export class MapComponent {
       untracked(() => this.buildCells());
     });
 
+    // Pieces of the active property inside each cell (recomputed when the property changes).
+    effect(() => {
+      const overlaps = this.analysis.overlaps();
+      if (!this.mapReady()) {
+        return;
+      }
+      untracked(() => this.buildClips(overlaps ?? []));
+    });
+
     // AOI outline + initial fit to the data bbox.
     effect(() => {
       const aoi = this.data.aoi();
@@ -148,7 +179,7 @@ export class MapComponent {
           pmIgnore: true,
           style: { color: cssToken('--map-aoi-stroke', '#ffffff'), weight: 1.5, dashArray: '6 4', fill: false },
         } as Leaflet.GeoJSONOptions).addTo(this.map!);
-        if (!this.fittedToData && !this.propertyLayer) {
+        if (!this.fittedToData && this.property.activeId() === null) {
           this.fitToData();
         }
         this.fittedToData = true;
@@ -158,6 +189,7 @@ export class MapComponent {
     // Re-color cells whenever variable, period, month, mode, hover or property changes.
     effect(() => {
       this.cellsVersion();
+      this.clipsVersion();
       const values = this.analysis.activeValues();
       const field = this.ui.activeDef().field;
       const color = this.colorFn();
@@ -165,19 +197,31 @@ export class MapComponent {
       const hovered = this.ui.hoveredClass();
       const overlaps = this.analysis.overlapByPoint();
       const hasProperty = this.property.hasProperty();
+      const clipped = hasProperty && !this.ui.fullCells();
       // Zoomed in on a farm, one 5 km cell fills the screen: fade it so the imagery stays visible.
       const baseOpacity = this.zoom() >= MAP_STYLE.closeZoom ? MAP_STYLE.cellOpacityClose : MAP_STYLE.cellOpacity;
       const stroke = cssToken('--map-cell-stroke', '#ffffff');
       const activeStroke = cssToken('--map-cell-active-stroke', '#ffffff');
+      const hoverOpacity = (v: number | null, normal: number) =>
+        hovered === null ? normal : classIndex(v, classes) === hovered ? MAP_STYLE.cellHighlightOpacity : MAP_STYLE.cellDimmedOpacity;
 
       for (const [pointId, rect] of this.rects) {
         const v = values.get(pointId)?.[field] ?? null;
         const fill = color(v);
         const inProperty = overlaps.has(pointId);
-        let opacity = baseOpacity;
-        if (hovered !== null) {
-          opacity = classIndex(v, classes) === hovered ? MAP_STYLE.cellHighlightOpacity : MAP_STYLE.cellDimmedOpacity;
-        } else if (hasProperty && !inProperty) {
+        if (clipped) {
+          // Only the cell outlines remain, for context; the clip pieces carry the color.
+          rect.setStyle({
+            fillOpacity: 0,
+            color: inProperty ? activeStroke : stroke,
+            weight: inProperty ? 1.5 : 0.5,
+            opacity: inProperty ? 0.8 : 0.3,
+            dashArray: inProperty ? '5 4' : undefined,
+          });
+          continue;
+        }
+        let opacity = hoverOpacity(v, baseOpacity);
+        if (hovered === null && hasProperty && !inProperty) {
           opacity = MAP_STYLE.cellDimmedOpacity;
         }
         rect.setStyle({
@@ -189,15 +233,45 @@ export class MapComponent {
           dashArray: fill ? undefined : '3 3',
         });
       }
+
+      if (this.map && this.clipGroup) {
+        if (clipped && !this.map.hasLayer(this.clipGroup)) {
+          this.clipGroup.addTo(this.map);
+        } else if (!clipped && this.map.hasLayer(this.clipGroup)) {
+          this.clipGroup.remove();
+        }
+      }
+      if (clipped) {
+        for (const [pointId, piece] of this.clips) {
+          const v = values.get(pointId)?.[field] ?? null;
+          const fill = color(v);
+          piece.setStyle({
+            stroke: false,
+            fillColor: fill ?? 'transparent',
+            fillOpacity: fill ? hoverOpacity(v, MAP_STYLE.clipOpacity) : 0,
+          });
+        }
+      }
     });
 
-    // Sync the property from outside the map (restore on load, import, clear).
+    // Draw / redraw the saved properties (only the active one is editable).
     effect(() => {
-      const state = this.property.state();
-      if (!this.mapReady() || state.source !== 'external') {
+      const list = this.property.properties();
+      const activeId = this.property.activeId();
+      if (!this.mapReady()) {
         return;
       }
-      untracked(() => this.renderExternalProperty(state.feature));
+      untracked(() => this.renderProperties(list, activeId));
+    });
+
+    // "New property" button: start the polygon tool.
+    effect(() => {
+      const n = this.ui.drawRequest();
+      if (!this.mapReady() || n === this.handledDrawRequest) {
+        return;
+      }
+      this.handledDrawRequest = n;
+      untracked(() => this.map?.pm.enableDraw('Polygon'));
     });
   }
 
@@ -219,8 +293,12 @@ export class MapComponent {
     L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(map);
     map.setView([9.8, -83.76], 10);
 
+    map.createPane(PROPERTY_PANE).style.zIndex = '450';
+
     map.on('zoomend', () => this.zoom.set(map.getZoom()));
     this.cellGroup = L.layerGroup().addTo(map);
+    this.clipGroup = L.layerGroup().addTo(map);
+    this.propertyGroup = L.layerGroup().addTo(map);
     this.setupGeoman(map);
 
     this.resizeObserver = new ResizeObserver(() => map.invalidateSize());
@@ -248,91 +326,137 @@ export class MapComponent {
       rotateMode: false,
     });
 
-    map.on('pm:create', e => {
+    // A finished drawing becomes a NEW saved property; the store's copy replaces the drawn layer.
+    map.on('pm:create', async e => {
       const layer = (e as unknown as { layer: Leaflet.Polygon }).layer;
-      const ok = this.pushFromLayer(layer, true);
-      if (!ok) {
+      const f = layer.toGeoJSON() as PropertyFeature;
+      if (f.geometry.type !== 'Polygon') {
         layer.remove();
         return;
       }
-      if (this.propertyLayer && this.propertyLayer !== layer) {
-        this.propertyLayer.remove(); // one property for the MVP: the new one replaces the old
+      const saved = await this.property.create(f);
+      layer.remove();
+      if (saved) {
+        this.toast.success(STRINGS.toasts.saved, { description: saved.name });
+        this.warnIfOutside();
       }
-      this.attach(layer);
-      this.afterPropertyPlaced();
     });
 
     map.on('pm:remove', e => {
       const layer = (e as unknown as { layer: Leaflet.Layer }).layer;
-      if (layer === this.propertyLayer) {
-        this.propertyLayer = null;
-        this.property.clear('map');
-        this.toast.show(STRINGS.toasts.cleared);
-        this.fitToData();
+      const id = this.idOf(layer);
+      if (id === null) {
+        return;
+      }
+      const name = this.propertyLayers.get(id)?.name ?? '';
+      this.propertyLayers.delete(id);
+      if (confirm(STRINGS.properties.confirmDelete(name))) {
+        void this.property.remove(id);
+      } else {
+        // Put it back.
+        this.renderProperties(this.property.properties(), this.property.activeId());
       }
     });
   }
 
-  /** Wire edit / drag events of the property polygon (debounced). */
-  private attach(layer: Leaflet.Polygon): void {
-    this.propertyLayer = layer;
-    const schedule = () => {
-      clearTimeout(this.editTimer);
-      this.editTimer = setTimeout(() => this.pushFromLayer(layer, false), EDIT_DEBOUNCE_MS);
-    };
-    layer.on('pm:markerdrag pm:drag pm:edit pm:vertexadded pm:vertexremoved', schedule);
-    // Outline only (with a faint fill so it stays clickable): the cells underneath show the values.
-    layer.setStyle({
-      color: cssToken('--map-property-stroke', '#ffffff'),
-      weight: 3,
-      fillColor: cssToken('--map-property-stroke', '#ffffff'),
-      fillOpacity: MAP_STYLE.propertyFillOpacity,
-    });
+  private renderProperties(list: SavedProperty[], activeId: number | null): void {
+    if (!this.map || !this.propertyGroup) {
+      return;
+    }
+    const activeChanged = this.renderedActiveId !== activeId;
+    if (activeChanged) {
+      // Edit / drag mode would otherwise stay bound to the previous property's layer.
+      if (this.map.pm.globalEditModeEnabled()) {
+        this.map.pm.disableGlobalEditMode();
+      }
+      if (this.map.pm.globalDragModeEnabled()) {
+        this.map.pm.toggleGlobalDragMode();
+      }
+    }
+
+    const ids = new Set(list.map(p => p.id));
+    for (const [id, entry] of this.propertyLayers) {
+      if (!ids.has(id)) {
+        entry.layer.remove();
+        this.propertyLayers.delete(id);
+      }
+    }
+    for (const p of list) {
+      const active = p.id === activeId;
+      const entry = this.propertyLayers.get(p.id);
+      if (entry && entry.geometry === p.geometry && entry.active === active) {
+        if (entry.name !== p.name) {
+          entry.name = p.name;
+          entry.layer.setTooltipContent(p.name);
+        }
+        continue;
+      }
+      entry?.layer.remove();
+      this.propertyLayers.set(p.id, { layer: this.makePropertyLayer(p, active), geometry: p.geometry, active, name: p.name });
+    }
+
+    const firstRender = this.renderedActiveId === undefined;
+    this.renderedActiveId = activeId;
+    if (activeChanged) {
+      const layer = activeId !== null ? this.propertyLayers.get(activeId)?.layer : undefined;
+      if (layer) {
+        this.map.fitBounds(layer.getBounds(), { padding: [60, 60], maxZoom: 16 });
+      } else if (!firstRender) {
+        this.fitToData();
+      }
+    }
   }
 
-  private pushFromLayer(layer: Leaflet.Polygon, notify: boolean): boolean {
+  private makePropertyLayer(p: SavedProperty, active: boolean): Leaflet.Polygon {
+    const rings = p.geometry.coordinates.map(ring => ring.map(([lon, lat]) => L.latLng(lat, lon)));
+    const color = cssToken('--map-property-stroke', '#ffffff');
+    const layer = L.polygon(rings, {
+      pane: PROPERTY_PANE,
+      pmIgnore: !active,
+      color,
+      weight: active ? 3 : 2,
+      opacity: active ? 1 : 0.85,
+      dashArray: active ? undefined : '6 5',
+      // A faint fill keeps the polygon clickable; the clip pieces underneath show the values.
+      fillColor: color,
+      fillOpacity: active ? MAP_STYLE.propertyFillOpacity : MAP_STYLE.propertyFillOpacity / 2,
+      bubblingMouseEvents: false,
+    } as Leaflet.PolylineOptions);
+    layer.bindTooltip(p.name, { sticky: true, direction: 'top' });
+    if (active) {
+      const schedule = () => {
+        clearTimeout(this.editTimer);
+        this.editTimer = setTimeout(() => this.pushGeometry(p.id, layer), EDIT_DEBOUNCE_MS);
+      };
+      layer.on('pm:markerdrag pm:drag pm:edit pm:vertexadded pm:vertexremoved', schedule);
+    } else {
+      layer.on('click', () => this.property.select(p.id));
+    }
+    layer.addTo(this.propertyGroup!);
+    return layer;
+  }
+
+  /** Sends an edited geometry to the store. Records it first so the redraw effect skips this layer. */
+  private pushGeometry(id: number, layer: Leaflet.Polygon): void {
     const f = layer.toGeoJSON() as PropertyFeature;
-    if (f.geometry.type !== 'Polygon') {
-      return false;
-    }
-    const result = this.property.set(f, 'map');
-    if (!result.ok) {
-      this.toast.error(STRINGS.toasts.selfIntersection);
-      return false;
-    }
-    if (notify) {
-      this.toast.success(STRINGS.toasts.saved);
-    }
-    return true;
-  }
-
-  private renderExternalProperty(feature: PropertyFeature | null): void {
-    if (!this.map) {
+    const entry = this.propertyLayers.get(id);
+    if (f.geometry.type !== 'Polygon' || !entry || entry.layer !== layer) {
       return;
     }
-    const hadLayer = this.propertyLayer !== null;
-    if (this.map.pm.globalEditModeEnabled()) {
-      this.map.pm.disableGlobalEditMode();
-    }
-    this.propertyLayer?.remove();
-    this.propertyLayer = null;
-    if (!feature) {
-      if (hadLayer) {
-        this.fitToData();
+    entry.geometry = f.geometry;
+    void this.property.updateGeometry(id, f.geometry);
+  }
+
+  private idOf(layer: Leaflet.Layer): number | null {
+    for (const [id, entry] of this.propertyLayers) {
+      if (entry.layer === layer) {
+        return id;
       }
-      return;
     }
-    const ring = feature.geometry.coordinates[0].map(([lon, lat]) => L.latLng(lat, lon));
-    const layer = L.polygon(ring).addTo(this.map);
-    this.attach(layer);
-    this.afterPropertyPlaced();
+    return null;
   }
 
-  private afterPropertyPlaced(): void {
-    if (!this.map || !this.propertyLayer) {
-      return;
-    }
-    this.map.fitBounds(this.propertyLayer.getBounds(), { padding: [60, 60], maxZoom: 16 });
+  private warnIfOutside(): void {
     if (!this.data.ready()) {
       return;
     }
@@ -374,6 +498,24 @@ export class MapComponent {
     this.cellsVersion.update(v => v + 1);
   }
 
+  private buildClips(overlaps: Overlap[]): void {
+    if (!this.clipGroup) {
+      return;
+    }
+    this.clipGroup.clearLayers();
+    this.clips.clear();
+    for (const o of overlaps) {
+      const piece = L.geoJSON(o.geometry, {
+        renderer: this.renderer,
+        pmIgnore: true,
+        interactive: false,
+      } as Leaflet.GeoJSONOptions);
+      piece.addTo(this.clipGroup);
+      this.clips.set(o.pointId, piece);
+    }
+    this.clipsVersion.update(v => v + 1);
+  }
+
   private tooltipHtml(pointId: number, lat: number, lon: number): string {
     const values = this.analysis.activeValues().get(pointId);
     const period = this.ui.period();
@@ -387,6 +529,7 @@ export class MapComponent {
     const periodLabel =
       period === 'normal' ? STRINGS.header.annualNormal : `${STRINGS.monthsLong[this.ui.month() - 1]} (typical)`;
     const keys = (['ndvi', 'rain_mm', 'tmean_c', 'balance_mm'] as const).filter(k => k !== active.key);
+    const share = this.analysis.overlapByPoint().get(pointId);
     return [
       `<div style="font-weight:600">${t.point} ${pointId}</div>`,
       `<div style="font-weight:600">${show(active.key)}</div>`,
@@ -394,6 +537,7 @@ export class MapComponent {
       row(t.elevation, `${fmt(values?.elevation_m, 0)} m`),
       row(t.coords, `${lat.toFixed(4)}, ${lon.toFixed(4)}`),
       row(t.period, periodLabel),
+      share ? row(t.propertyShare, `${fmt(share.weight * 100, 1)} %`) : '',
     ].join('');
   }
 }

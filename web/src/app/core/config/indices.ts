@@ -291,6 +291,8 @@ export const MAP_STYLE = {
   closeZoom: 14,
   cellDimmedOpacity: 0.12,
   cellHighlightOpacity: 0.9,
+  /** Fill of the part of each cell inside the selected property (farm zoom, over imagery). */
+  clipOpacity: 0.6,
   propertyFillOpacity: 0.06,
 };
 

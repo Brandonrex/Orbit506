@@ -52,7 +52,7 @@ export class AnalysisService {
       if (inter) {
         const a = area(inter);
         if (a > 0) {
-          out.push({ pointId: c.pointId, areaM2: a, weight: 0 });
+          out.push({ pointId: c.pointId, areaM2: a, weight: 0, geometry: inter });
         }
       }
     }

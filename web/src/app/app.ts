@@ -1,13 +1,13 @@
 import { Component } from '@angular/core';
+import { RouterOutlet } from '@angular/router';
 
-import { ShellComponent } from './features/layout/shell.component';
 import { ZardSonnerComponent } from './shared/components/sonner';
 
 @Component({
   selector: 'app-root',
-  imports: [ShellComponent, ZardSonnerComponent],
+  imports: [RouterOutlet, ZardSonnerComponent],
   template: `
-    <af-shell />
+    <router-outlet />
     <z-sonner position="bottom-left" [richColors]="true" />
   `,
 })

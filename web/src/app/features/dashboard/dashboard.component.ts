@@ -50,8 +50,8 @@ import { type ProfilePoint, ProfileChartComponent } from './profile-chart.compon
           }
 
           <div class="flex items-baseline justify-between">
-            <h2 class="text-base font-semibold">
-              {{ analysis.isPropertyScope() ? d.propertyTitle : d.regionTitle }}
+            <h2 class="min-w-0 truncate text-base font-semibold">
+              {{ analysis.isPropertyScope() ? (property.active()?.name ?? d.propertyTitle) : d.regionTitle }}
             </h2>
             <span class="text-muted-foreground text-xs">{{ periodLabel() }}</span>
           </div>
@@ -166,6 +166,7 @@ import { type ProfilePoint, ProfileChartComponent } from './profile-chart.compon
                       }
                     </tbody>
                   </table>
+                  <p class="text-muted-foreground mt-2 text-xs">{{ d.resolutionNote(scopeCount()) }}</p>
                 </z-card-content>
               </z-card>
             }
