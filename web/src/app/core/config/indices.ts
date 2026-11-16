@@ -275,6 +275,56 @@ function tempClasses(): ClassDef[] {
   ];
 }
 
+// ---------- ECOCROP crop fit (values are status codes merged in by AnalysisService) ----------
+/** Same colors as the --status-* CSS tokens. */
+export const STATUS_COLORS = { favorable: '#245c43', caution: '#657a32', unfavorable: '#a12b2b' } as const;
+
+const statusClasses = (meaning: [string, string, string]): ClassDef[] => [
+  { max: 0.5, label: 'Unfavorable', meaning: meaning[0], color: STATUS_COLORS.unfavorable },
+  { min: 0.5, max: 1.5, label: 'Caution', meaning: meaning[1], color: STATUS_COLORS.caution },
+  { min: 1.5, label: 'Favorable', meaning: meaning[2], color: STATUS_COLORS.favorable },
+];
+
+/** Shown as map tabs only once a crop is selected in the planning section. */
+export const CROP_VARIABLES: VarDef[] = [
+  {
+    key: 'crop_thermal',
+    field: 'crop_thermal',
+    label: 'Crop fit · temperature',
+    shortLabel: 'Crop · temperature',
+    unit: '',
+    decimals: 1,
+    description:
+      'ECOCROP thermal suitability of the selected crop: mean monthly temperature vs. its optimal and tolerated range (2020–2025 climatology).',
+    aggregate: 'mean',
+    provisional: true,
+    classes: {
+      month: statusClasses(['outside tolerated range', 'tolerated, not optimal', 'within optimal range']),
+      normal: [
+        { max: 3.5, label: '0–3 months', meaning: 'few optimal months', color: STATUS_COLORS.unfavorable },
+        { min: 3.5, max: 8.5, label: '4–8 months', meaning: 'part of the year optimal', color: STATUS_COLORS.caution },
+        { min: 8.5, label: '9–12 months', meaning: 'most of the year optimal', color: STATUS_COLORS.favorable },
+      ],
+    },
+  },
+  {
+    key: 'crop_rain',
+    field: 'crop_rain',
+    label: 'Crop fit · rainfall',
+    shortLabel: 'Crop · rainfall',
+    unit: '',
+    decimals: 1,
+    description:
+      'ECOCROP rainfall suitability of the selected crop. Typical month: rain accumulated over a growing period started that month. Annual normal: annual rain vs. its range.',
+    aggregate: 'mean',
+    provisional: true,
+    classes: {
+      month: statusClasses(['planting start outside tolerated rain', 'tolerated rain, not optimal', 'optimal rain for this start']),
+      normal: statusClasses(['annual rain outside tolerated range', 'annual rain tolerated', 'annual rain optimal']),
+    },
+  },
+];
+
 /** Derived KPI thresholds (provisional). */
 export const KPI_THRESHOLDS = {
   /** "Stressed area %": NDVI below this value. */
@@ -296,7 +346,7 @@ export const MAP_STYLE = {
   propertyFillOpacity: 0.06,
 };
 
-export const VAR_BY_KEY: Record<VarKey, VarDef> = Object.fromEntries(VARIABLES.map(v => [v.key, v])) as Record<
+export const VAR_BY_KEY: Record<VarKey, VarDef> = Object.fromEntries([...VARIABLES, ...CROP_VARIABLES].map(v => [v.key, v])) as Record<
   VarKey,
   VarDef
 >;

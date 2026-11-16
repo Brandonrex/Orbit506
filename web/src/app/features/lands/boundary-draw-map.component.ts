@@ -16,8 +16,12 @@ import { NgIcon } from '@ng-icons/core';
 import type * as Leaflet from 'leaflet';
 
 import { BASEMAPS, LABELS_OVERLAY } from '@/core/config/basemaps';
+import { classesFor, MAP_STYLE, VAR_BY_KEY } from '@/core/config/indices';
 import { STRINGS } from '@/core/i18n/strings';
-import { cssToken } from '@/core/utils/color';
+import { fmt } from '@/core/services/analysis.service';
+import { DataService } from '@/core/services/data.service';
+import { UiStateService } from '@/core/services/ui-state.service';
+import { classIndex, cssToken } from '@/core/utils/color';
 import { ZardButtonComponent } from '@/shared/components/button';
 
 import { L } from '../map/leaflet';
@@ -30,8 +34,13 @@ export interface LatLng {
 
 type DrawTool = 'point' | 'polygon' | null;
 
+/** Data grid sits under the drawing (overlayPane = 400, markers = 600). */
+const GRID_PANE = 'dataGrid';
+
 /**
  * Map used to place and outline a new land (Figma: InteractiveMap inside AddLandModal).
+ * Shows the same data grid as the land map (cells colored by the active variable, point centers,
+ * data-area outline) and only accepts points inside the grid, so a land always has data.
  * Floating toolbar: mark a reference point, draw the boundary by clicking, reset. The polygon is
  * closed by clicking its first point or "Finish drawing"; once closed, its points can be dragged.
  */
@@ -43,11 +52,16 @@ type DrawTool = 'point' | 'polygon' | null;
   template: `
     <div
       #mapEl
-      class="bg-secondary relative z-1 h-[330px] w-full"
+      class="bg-secondary relative z-1 h-[380px] w-full"
       role="application"
       [class.af-crosshair]="tool() === 'polygon'"
       [attr.aria-label]="t.mapLabel"
     ></div>
+
+    <div class="bg-card/95 shadow-lift pointer-events-none absolute bottom-[44px] left-2 z-1000 rounded-sm border px-2.5 py-1.5 text-[10px] leading-snug">
+      <strong class="block">{{ t.gridTitle }}</strong>
+      <span class="text-muted-foreground">{{ t.gridNote(gridVar().shortLabel) }}</span>
+    </div>
 
     <div role="toolbar" [class]="toolbarClass" [attr.aria-label]="t.toolbar">
       <button type="button" [class]="toolClass" [attr.aria-pressed]="tool() === 'point'" [title]="t.markPoint" (click)="togglePoint()">
@@ -65,8 +79,13 @@ type DrawTool = 'point' | 'polygon' | null;
     </div>
 
     <div [class]="hintClass" aria-live="polite">
-      <ng-icon [name]="tool() === 'polygon' || complete() ? 'fsPolygon' : 'fsPin'" size="16" class="text-primary shrink-0" />
-      <span>{{ instruction() }}</span>
+      @if (outside()) {
+        <ng-icon name="fsAlert" size="16" class="text-destructive-text shrink-0" />
+        <span class="text-destructive-text font-semibold" role="alert">{{ t.outside }}</span>
+      } @else {
+        <ng-icon [name]="tool() === 'polygon' || complete() ? 'fsPolygon' : 'fsPin'" size="16" class="text-primary shrink-0" />
+        <span>{{ instruction() }}</span>
+      }
       @if (tool() === 'polygon' && polygon().length >= 3 && !complete()) {
         <button z-button type="button" class="ml-auto min-h-9 shrink-0 rounded-[6px] px-3 text-[11px] font-bold" (click)="finish()">
           {{ t.finish }}
@@ -89,6 +108,18 @@ export class BoundaryDrawMapComponent {
   readonly complete = model(false);
 
   protected readonly tool = signal<DrawTool>(null);
+  /** Set when the last click / drag fell outside the data grid. */
+  protected readonly outside = signal(false);
+
+  private readonly data = inject(DataService);
+  private readonly ui = inject(UiStateService);
+  /** Crop-fit tabs have no raw values, so the grid falls back to NDVI for them. */
+  protected readonly gridVar = computed(() => {
+    const def = this.ui.activeDef();
+    return def.key === 'crop_thermal' || def.key === 'crop_rain' ? VAR_BY_KEY.ndvi : def;
+  });
+  private grid?: Leaflet.LayerGroup;
+  private outsideTimer?: ReturnType<typeof setTimeout>;
   protected readonly instruction = computed(() => {
     if (this.complete()) {
       return this.t.hintDone;
@@ -111,8 +142,49 @@ export class BoundaryDrawMapComponent {
   constructor() {
     afterNextRender(() => this.init());
     inject(DestroyRef).onDestroy(() => {
+      clearTimeout(this.outsideTimer);
       this.resizeObserver?.disconnect();
       this.map?.remove();
+    });
+
+    // Data grid: one square per data point, colored like the land map.
+    effect(() => {
+      const cells = this.data.cells();
+      const def = this.gridVar();
+      const period = this.ui.period();
+      const values = this.data.valuesFor(period, this.ui.month());
+      const aoi = this.data.aoi();
+      if (!this.ready() || !this.map) {
+        return;
+      }
+      untracked(() => {
+        this.grid?.remove();
+        const grid = L.layerGroup();
+        const renderer = L.canvas({ padding: 0.5, pane: GRID_PANE });
+        const classes = classesFor(def, period);
+        for (const c of cells) {
+          const v = values.get(c.pointId)?.[def.field] ?? null;
+          const i = classIndex(v, classes);
+          L.rectangle(c.bounds, {
+            renderer,
+            pane: GRID_PANE,
+            pmIgnore: true,
+            color: '#ffffff',
+            weight: 0.6,
+            opacity: 0.7,
+            fillColor: i >= 0 ? classes[i].color : 'transparent',
+            fillOpacity: i >= 0 ? MAP_STYLE.cellOpacityClose + 0.1 : 0,
+          } as Leaflet.PolylineOptions)
+            .bindTooltip(`${STRINGS.tooltip.point} ${c.pointId} · ${def.shortLabel}: ${fmt(v, def.decimals)}`, { sticky: true, direction: 'top' })
+            .addTo(grid);
+          L.circleMarker([c.lat, c.lon], { renderer, pane: GRID_PANE, radius: 2.5, color: '#ffffff', weight: 1, fillColor: '#24352c', fillOpacity: 0.9, interactive: false }).addTo(grid);
+        }
+        if (aoi) {
+          L.geoJSON(aoi, { pane: GRID_PANE, interactive: false, style: { color: '#ffffff', weight: 1.5, dashArray: '6 4', fill: false } } as Leaflet.GeoJSONOptions).addTo(grid);
+        }
+        grid.addTo(this.map!);
+        this.grid = grid;
+      });
     });
 
     effect(() => {
@@ -173,8 +245,9 @@ export class BoundaryDrawMapComponent {
 
   private init(): void {
     const start = this.point();
-    const map = L.map(this.mapEl().nativeElement, { center: [start.lat, start.lng], zoom: 14, zoomControl: false });
+    const map = L.map(this.mapEl().nativeElement, { center: [start.lat, start.lng], zoom: 12, minZoom: 9, zoomControl: false });
     L.control.zoom({ zoomInTitle: 'Zoom in', zoomOutTitle: 'Zoom out' }).addTo(map);
+    map.createPane(GRID_PANE).style.zIndex = '350';
     const base = BASEMAPS[0];
     L.tileLayer(base.url, { attribution: base.attribution, maxZoom: base.maxZoom }).addTo(map);
     L.tileLayer(LABELS_OVERLAY.url, { attribution: LABELS_OVERLAY.attribution, maxZoom: LABELS_OVERLAY.maxZoom }).addTo(map);
@@ -191,6 +264,11 @@ export class BoundaryDrawMapComponent {
     }).addTo(map);
     marker.on('dragend', () => {
       const ll = marker.getLatLng();
+      if (!this.inside(ll.lat, ll.lng)) {
+        const p = this.point();
+        marker.setLatLng([p.lat, p.lng]);
+        return;
+      }
       this.point.set({ lat: ll.lat, lng: ll.lng });
     });
 
@@ -199,6 +277,10 @@ export class BoundaryDrawMapComponent {
 
     map.on('click', (e: Leaflet.LeafletMouseEvent) => {
       const next = { lat: e.latlng.lat, lng: e.latlng.lng };
+      const placing = this.tool() === 'point' || (this.tool() === 'polygon' && !this.complete());
+      if (placing && !this.inside(next.lat, next.lng)) {
+        return;
+      }
       if (this.tool() === 'point') {
         this.point.set(next);
         this.tool.set(null);
@@ -269,12 +351,29 @@ export class BoundaryDrawMapComponent {
       });
       vertex.on('dragend', () => {
         const ll = vertex.getLatLng();
+        if (!this.inside(ll.lat, ll.lng)) {
+          vertex.setLatLng([p.lat, p.lng]);
+          return;
+        }
         this.setBoundary(
           this.polygon().map((item, i) => (i === index ? { lat: ll.lat, lng: ll.lng } : item)),
           true,
         );
       });
     });
+  }
+
+  /** True when the point is inside a data cell; otherwise flags it for a few seconds. */
+  private inside(lat: number, lng: number): boolean {
+    const ok = this.data.cells().some(({ bounds: [[s, w], [n, e]] }) => lat >= s && lat <= n && lng >= w && lng <= e);
+    if (!ok) {
+      this.outside.set(true);
+      clearTimeout(this.outsideTimer);
+      this.outsideTimer = setTimeout(() => this.outside.set(false), 3500);
+    } else {
+      this.outside.set(false);
+    }
+    return ok;
   }
 
   private boundaryColor(): string {

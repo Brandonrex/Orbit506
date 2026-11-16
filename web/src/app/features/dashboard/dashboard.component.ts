@@ -1,11 +1,12 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { NgIcon, provideIcons } from '@ng-icons/core';
 import { lucideMapPinOff, lucideTriangleAlert } from '@ng-icons/lucide';
 
-import { classesFor, unitFor, VAR_BY_KEY, type VarDef } from '@/core/config/indices';
+import { classesFor, STATUS_COLORS, unitFor, VAR_BY_KEY, type VarDef } from '@/core/config/indices';
 import { STRINGS } from '@/core/i18n/strings';
 import type { Period } from '@/core/models';
 import { AnalysisService, fmt } from '@/core/services/analysis.service';
+import { CropDataService } from '@/core/services/crop-data.service';
 import { DataService } from '@/core/services/data.service';
 import { PropertyService } from '@/core/services/property.service';
 import { UiStateService } from '@/core/services/ui-state.service';
@@ -15,10 +16,7 @@ import { ZardEmptyComponent } from '@/shared/components/empty';
 import { ZardSkeletonComponent } from '@/shared/components/skeleton';
 import { ZardTableImports } from '@/shared/components/table';
 
-import { ClassDistributionComponent } from './class-distribution.component';
-import { HistogramComponent } from './histogram.component';
 import { type KpiBadge, KpiCardComponent } from './kpi-card.component';
-import { type ProfilePoint, ProfileChartComponent } from './profile-chart.component';
 
 @Component({
   selector: 'af-dashboard',
@@ -29,105 +27,82 @@ import { type ProfilePoint, ProfileChartComponent } from './profile-chart.compon
     ZardSkeletonComponent,
     ZardTableImports,
     KpiCardComponent,
-    ClassDistributionComponent,
-    HistogramComponent,
-    ProfileChartComponent,
   ],
   providers: [provideIcons({ lucideTriangleAlert, lucideMapPinOff })],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'block' },
   template: `
-    <div class="space-y-5">
-      @switch (data.status()) {
-        @case ('error') {
+    @switch (data.status()) {
+      @case ('error') {
+        @if (section() === 'kpis') {
           <z-empty zIcon="lucideTriangleAlert" [zTitle]="d.loadingError" [zDescription]="data.error() ?? ''" />
         }
-        @case ('ready') {
-          <!-- Scope banner -->
-          @if (!analysis.isPropertyScope()) {
-            <div class="bg-background text-muted-foreground flex items-center gap-2 rounded-sm border px-4 py-3 text-[13px]">
-              <ng-icon name="fsInfo" size="17" class="text-primary shrink-0" />
-              {{ d.regionBanner }}
+      }
+      @case ('ready') {
+        @switch (section()) {
+          @case ('kpis') {
+            <div class="space-y-4">
+              @if (!analysis.isPropertyScope()) {
+                <div class="bg-background text-muted-foreground flex items-center gap-2 rounded-sm border px-4 py-3 text-[13px]">
+                  <ng-icon name="fsInfo" size="17" class="text-primary shrink-0" />
+                  {{ d.regionBanner }}
+                </div>
+              }
+              @if (analysis.isEmpty()) {
+                <z-empty class="bg-card shadow-soft rounded-lg border" zIcon="lucideMapPinOff" [zTitle]="d.emptyTitle" [zDescription]="d.emptyDescription" />
+              } @else {
+                @if (crop(); as c) {
+                  @if (analysis.cropKpis(); as ck) {
+                    <p class="text-primary text-xs font-bold tracking-widest uppercase">{{ pl.cropKpis(c.name) }}</p>
+                    <div class="grid grid-cols-2 gap-3">
+                      <af-kpi-card [label]="pl.kpiFavMonths" [value]="'' + ck.favorableMonths" [sub]="pl.kpiFavMonthsSub" />
+                      <af-kpi-card [label]="pl.kpiFavStarts" [value]="'' + ck.favorableStarts" [sub]="pl.kpiFavStartsSub" />
+                      <af-kpi-card
+                        [label]="pl.kpiNow"
+                        [value]="fmt(ck.tempNow, 1)"
+                        unit="°C"
+                        [sub]="s.monthsLong[ui.month() - 1]"
+                        [badge]="statusBadge(ck.thermalNow)"
+                      />
+                      <af-kpi-card [label]="pl.kpiArea" [value]="fmt(ck.favorableAreaPct, 0)" unit="%" [sub]="s.monthsLong[ui.month() - 1]" />
+                      <af-kpi-card
+                        class="col-span-2"
+                        [label]="pl.kpiAnnualRain"
+                        [value]="fmt(ck.annualRain[0], 0)"
+                        unit="mm"
+                        [sub]="pl.optimal + ': ' + c.rain.optMin + '–' + c.rain.optMax + ' mm'"
+                        [badge]="statusBadge(ck.annualRain[1])"
+                      />
+                    </div>
+                    <p class="text-muted-foreground text-xs font-bold tracking-widest uppercase">{{ d.conditions }}</p>
+                  }
+                }
+                <div class="grid grid-cols-2 gap-3">
+                  @if (analysis.isPropertyScope()) {
+                    <af-kpi-card [label]="d.area" [value]="fmt(property.areaHa(), 2)" [unit]="u.ha" [sub]="fmt(property.areaMz(), 2) + ' ' + u.mz" />
+                    <af-kpi-card [label]="d.cells" [value]="'' + scopeCount()" [sub]="d.cellsSub(scopeCount())" />
+                  } @else {
+                    <af-kpi-card class="col-span-2" [label]="d.cells" [value]="'' + scopeCount()" [sub]="d.regionCellsSub" />
+                  }
+                  <af-kpi-card [label]="d.meanNdvi" [value]="fmt(k().ndvi, 2)" [badge]="badge(V.ndvi, k().ndvi)" />
+                  <af-kpi-card [label]="d.meanTemp" [value]="fmt(k().tmean, 1)" unit="°C" [badge]="badge(V.tmean_c, k().tmean)" />
+                  <af-kpi-card [label]="d.rain" [value]="fmt(k().rain, 0)" [unit]="unitOf(V.rain_mm)" [badge]="badge(V.rain_mm, k().rain)" />
+                  <af-kpi-card [label]="d.balance" [value]="fmt(k().balance, 0)" [unit]="unitOf(V.balance_mm)" [badge]="badge(V.balance_mm, k().balance)" />
+                  <af-kpi-card
+                    [label]="d.frost"
+                    [value]="k().frostClass?.label ?? '–'"
+                    [sub]="'coldest night ' + fmt(k().coldest, 1) + ' °C'"
+                    [badge]="k().frostClass ? { label: k().frostClass!.label, color: k().frostClass!.color } : null"
+                  />
+                  <af-kpi-card [label]="d.stressed" [value]="fmt(k().stressedPct, 0)" unit="%" [sub]="d.stressedSub" />
+                  <af-kpi-card class="col-span-2" [label]="d.waterDeficit" [value]="fmt(k().waterDeficitPct, 0)" unit="%" [sub]="d.waterDeficitSub" />
+                </div>
+              }
             </div>
           }
-
-          @if (analysis.isEmpty()) {
-            <z-empty class="bg-card shadow-soft rounded-lg border" zIcon="lucideMapPinOff" [zTitle]="d.emptyTitle" [zDescription]="d.emptyDescription" />
-          } @else {
-            <!-- KPIs -->
-            <div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-              @if (analysis.isPropertyScope()) {
-                <af-kpi-card [label]="d.area" [value]="fmt(property.areaHa(), 2)" [unit]="u.ha" [sub]="fmt(property.areaMz(), 2) + ' ' + u.mz" />
-                <af-kpi-card [label]="d.cells" [value]="'' + scopeCount()" [sub]="d.cellsSub(scopeCount())" />
-              } @else {
-                <af-kpi-card [label]="d.cells" [value]="'' + scopeCount()" [sub]="d.regionCellsSub" />
-              }
-              <af-kpi-card [label]="d.meanNdvi" [value]="fmt(k().ndvi, 2)" [badge]="badge(V.ndvi, k().ndvi)" />
-              <af-kpi-card [label]="d.meanTemp" [value]="fmt(k().tmean, 1)" unit="°C" [badge]="badge(V.tmean_c, k().tmean)" />
-              <af-kpi-card [label]="d.rain" [value]="fmt(k().rain, 0)" [unit]="unitOf(V.rain_mm)" [badge]="badge(V.rain_mm, k().rain)" />
-              <af-kpi-card
-                [label]="d.balance"
-                [value]="fmt(k().balance, 0)"
-                [unit]="unitOf(V.balance_mm)"
-                [badge]="badge(V.balance_mm, k().balance)"
-              />
-              <af-kpi-card
-                [label]="d.frost"
-                [value]="k().frostClass?.label ?? '–'"
-                [sub]="'coldest night ' + fmt(k().coldest, 1) + ' °C'"
-                [badge]="k().frostClass ? { label: k().frostClass!.label, color: k().frostClass!.color } : null"
-              />
-              <af-kpi-card [label]="d.stressed" [value]="fmt(k().stressedPct, 0)" unit="%" [sub]="d.stressedSub" />
-              <af-kpi-card [label]="d.waterDeficit" [value]="fmt(k().waterDeficitPct, 0)" unit="%" [sub]="d.waterDeficitSub" />
-            </div>
-
-            <div class="grid items-start gap-5 lg:grid-cols-2">
-            <!-- Class distribution -->
-            <z-card>
-              <z-card-header>
-                <z-card-title [zTitle]="d.distribution + ' · ' + ui.activeDef().shortLabel" />
-                <z-card-description [zDescription]="d.distributionSub" />
-              </z-card-header>
-              <z-card-content>
-                <af-class-distribution
-                  [shares]="analysis.classShares()"
-                  [hovered]="ui.hoveredClass()"
-                  (hoverClass)="ui.hoveredClass.set($event)"
-                />
-              </z-card-content>
-            </z-card>
-
-            <!-- Monthly profile -->
-            <z-card>
-              <z-card-header>
-                <z-card-title [zTitle]="d.profile + ' · ' + ui.activeDef().shortLabel + unitSuffix()" />
-                <z-card-description [zDescription]="d.profileSub" />
-              </z-card-header>
-              <z-card-content>
-                <af-profile-chart
-                  [points]="profile()"
-                  [activeIndex]="ui.period() === 'month' ? ui.month() - 1 : null"
-                  [seriesLabel]="ui.activeDef().shortLabel"
-                  [decimals]="ui.activeDef().decimals"
-                  (selectIndex)="ui.setMonth($event + 1)"
-                />
-              </z-card-content>
-            </z-card>
-
-            <!-- Histogram -->
-            <z-card>
-              <z-card-header>
-                <z-card-title [zTitle]="d.histogram + ' · ' + ui.activeDef().shortLabel + unitSuffix()" />
-                <z-card-description [zDescription]="d.histogramSub" />
-              </z-card-header>
-              <z-card-content>
-                <af-histogram [bins]="analysis.histogram()" [marker]="analysis.histogramMarker()" [markerLabel]="d.propertyMarker" />
-              </z-card-content>
-            </z-card>
-
-            <!-- Cells table -->
-            @if (analysis.isPropertyScope()) {
-              <z-card class="lg:col-span-2">
+          @case ('table') {
+            @if (analysis.isPropertyScope() && !analysis.isEmpty()) {
+              <z-card>
                 <z-card-header>
                   <z-card-title [zTitle]="d.cellsTable" />
                   <z-card-description [zDescription]="d.weightingNote" />
@@ -166,25 +141,28 @@ import { type ProfilePoint, ProfileChartComponent } from './profile-chart.compon
                 </z-card-content>
               </z-card>
             }
-            </div>
           }
         }
-        @default {
-          <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            @for (i of [1, 2, 3, 4, 5, 6, 7, 8]; track i) {
+      }
+      @default {
+        @if (section() === 'kpis') {
+          <div class="grid grid-cols-2 gap-3">
+            @for (i of [1, 2, 3, 4, 5, 6]; track i) {
               <z-skeleton class="h-24 rounded-lg" />
             }
           </div>
-          <z-skeleton class="h-32 rounded-lg" />
-          <z-skeleton class="h-48 rounded-lg" />
-          <z-skeleton class="h-48 rounded-lg" />
         }
       }
-    </div>
+    }
   `,
 })
 export class DashboardComponent {
+  /** Which part to render; the land page places each part in its grid. */
+  readonly section = input<'kpis' | 'table'>('kpis');
+
   protected readonly d = STRINGS.dashboard;
+  protected readonly pl = STRINGS.planning;
+  protected readonly s = STRINGS;
   protected readonly u = STRINGS.units;
   protected readonly t = STRINGS.tooltip;
   protected readonly V = VAR_BY_KEY;
@@ -194,19 +172,18 @@ export class DashboardComponent {
   protected readonly analysis = inject(AnalysisService);
   protected readonly property = inject(PropertyService);
   protected readonly ui = inject(UiStateService);
+  private readonly crops = inject(CropDataService);
+
+  protected readonly crop = computed(() => this.crops.crop(this.ui.crop()));
 
   protected readonly k = this.analysis.kpis;
   protected readonly scopeCount = computed(() => this.analysis.scope().length);
 
-  protected readonly unitSuffix = computed(() => {
-    // The profile is always monthly, so show the monthly unit there.
-    const unit = unitFor(this.ui.activeDef(), 'month');
-    return unit ? ` (${unit})` : '';
-  });
-
-  protected readonly profile = computed<ProfilePoint[]>(() =>
-    this.analysis.profile().map(p => ({ label: STRINGS.months[p.month - 1], value: p.value })),
-  );
+  protected statusBadge(code: number): KpiBadge | null {
+    const label = code === 2 ? this.pl.favorable : code === 1 ? this.pl.caution : code === 0 ? this.pl.unfavorable : null;
+    const color = code === 2 ? STATUS_COLORS.favorable : code === 1 ? STATUS_COLORS.caution : STATUS_COLORS.unfavorable;
+    return label ? { label, color } : null;
+  }
 
   protected unitOf(def: VarDef): string {
     return unitFor(def, this.ui.period());

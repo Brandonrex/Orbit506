@@ -1,0 +1,102 @@
+[
+ {
+  "id": 1971,
+  "name": "Papa",
+  "shortName": "PA",
+  "scientificName": "Solanum tuberosum",
+  "temp": {
+   "optMin": 15.0,
+   "optMax": 25.0,
+   "tolMin": 7.0,
+   "tolMax": 30.0
+  },
+  "rain": {
+   "optMin": 500.0,
+   "optMax": 800.0,
+   "tolMin": 250.0,
+   "tolMax": 2000.0
+  },
+  "growingDays": [
+   90.0,
+   160.0
+  ],
+  "cycleMonths": 3,
+  "rainDurationMonths": 5,
+  "drainage": "well (dry spells)"
+ },
+ {
+  "id": 871,
+  "name": "Zanahoria",
+  "shortName": "ZA",
+  "scientificName": "Daucus carota",
+  "temp": {
+   "optMin": 15.0,
+   "optMax": 24.0,
+   "tolMin": 3.0,
+   "tolMax": 30.0
+  },
+  "rain": {
+   "optMin": 600.0,
+   "optMax": 1200.0,
+   "tolMin": 400.0,
+   "tolMax": 4000.0
+  },
+  "growingDays": [
+   40.0,
+   150.0
+  ],
+  "cycleMonths": 2,
+  "rainDurationMonths": 4,
+  "drainage": "well (dry spells)"
+ },
+ {
+  "id": 364,
+  "name": "Cebolla",
+  "shortName": "CE",
+  "scientificName": "Allium cepa",
+  "temp": {
+   "optMin": 12.0,
+   "optMax": 25.0,
+   "tolMin": 4.0,
+   "tolMax": 30.0
+  },
+  "rain": {
+   "optMin": 350.0,
+   "optMax": 600.0,
+   "tolMin": 300.0,
+   "tolMax": 2800.0
+  },
+  "growingDays": [
+   85.0,
+   175.0
+  ],
+  "cycleMonths": 3,
+  "rainDurationMonths": 5,
+  "drainage": "well (dry spells)"
+ },
+ {
+  "id": 1265,
+  "name": "Camote",
+  "shortName": "CA",
+  "scientificName": "Ipomoea batatas",
+  "temp": {
+   "optMin": 18.0,
+   "optMax": 28.0,
+   "tolMin": 10.0,
+   "tolMax": 38.0
+  },
+  "rain": {
+   "optMin": 750.0,
+   "optMax": 2000.0,
+   "tolMin": 350.0,
+   "tolMax": 5000.0
+  },
+  "growingDays": [
+   80.0,
+   170.0
+  ],
+  "cycleMonths": 3,
+  "rainDurationMonths": 5,
+  "drainage": null
+ }
+]

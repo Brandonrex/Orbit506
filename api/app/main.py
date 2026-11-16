@@ -1,4 +1,4 @@
-"""Adaptive Farming API: saved properties in SQLite.
+"""Adaptive Farming API: saved properties and their annual crop plans in SQLite.
 
 Run from api/:  uvicorn app.main:app --reload --port 8000
 """
@@ -14,7 +14,7 @@ from fastapi.responses import RedirectResponse
 
 from .db import get_conn, migrate
 from .geo import CheckedPolygon, GeometryError, check_polygon
-from .models import PropertyIn, PropertyOut, PropertyPatch
+from .models import PlanIn, PlanOut, PropertyIn, PropertyOut, PropertyPatch
 
 
 @asynccontextmanager
@@ -139,3 +139,49 @@ def delete_property(pid: int, conn: Conn):
     with conn:
         conn.execute("DELETE FROM properties WHERE id = ?", (pid,))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def plan_out(pid: int, row: sqlite3.Row | None) -> PlanOut:
+    if row is None:
+        return PlanOut(property_id=pid, status="draft", cycles=[])
+    return PlanOut(
+        property_id=pid,
+        status=row["status"],
+        cycles=json.loads(row["cycles"]),
+        saved_at=row["saved_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+@app.get("/api/plans", response_model=list[PlanOut])
+def list_plans(conn: Conn):
+    """Every stored plan (the lands page shows how many crops each land has planned)."""
+    rows = conn.execute("SELECT * FROM plans ORDER BY property_id").fetchall()
+    return [plan_out(r["property_id"], r) for r in rows]
+
+
+@app.get("/api/properties/{pid}/plan", response_model=PlanOut)
+def get_plan(pid: int, conn: Conn):
+    fetch(conn, pid)
+    row = conn.execute("SELECT * FROM plans WHERE property_id = ?", (pid,)).fetchone()
+    return plan_out(pid, row)
+
+
+@app.put("/api/properties/{pid}/plan", response_model=PlanOut)
+def put_plan(pid: int, body: PlanIn, conn: Conn):
+    fetch(conn, pid)
+    ts = now()
+    previous = conn.execute("SELECT saved_at FROM plans WHERE property_id = ?", (pid,)).fetchone()
+    saved_at = ts if body.status == "saved" else (previous["saved_at"] if previous else None)
+    cycles = json.dumps([c.model_dump(by_alias=True) for c in body.cycles])
+    with conn:
+        conn.execute(
+            """
+            INSERT INTO plans (property_id, status, cycles, saved_at, updated_at) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(property_id) DO UPDATE SET
+                status = excluded.status, cycles = excluded.cycles,
+                saved_at = excluded.saved_at, updated_at = excluded.updated_at
+            """,
+            (pid, body.status, cycles, saved_at, ts),
+        )
+    return get_plan(pid, conn)

@@ -18,7 +18,10 @@
   "files": {
     "typical_month": "typical_month.csv",
     "annual_normal": "annual_normal.csv",
-    "aoi": "aoi.geojson"
+    "aoi": "aoi.geojson",
+    "crops": "crops/crops.json",
+    "suitability": "crops/suitability.json",
+    "series": "crops/series.csv"
   },
   "variables": [
     "ndvi",
@@ -127,5 +130,13 @@
         "max": 5.36
       }
     }
-  }
+  },
+  "years": [
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025
+  ]
 }

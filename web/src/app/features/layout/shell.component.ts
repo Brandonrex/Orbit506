@@ -8,7 +8,7 @@ import { ZardSonnerService } from '@/shared/components/sonner';
 
 import { HeaderComponent } from './header.component';
 
-/** App layout (Figma "DashboardLayout"): header on top, centered 1200px content column below. */
+/** App layout (Figma "DashboardLayout"): header on top, centered 1600px content column below. */
 @Component({
   selector: 'af-shell',
   imports: [RouterOutlet, HeaderComponent],
@@ -23,7 +23,7 @@ import { HeaderComponent } from './header.component';
     <af-header />
     <main
       id="main-content"
-      class="mx-auto min-h-[calc(100dvh-76px)] max-w-[1200px] px-8 pt-16 pb-20 max-lg:px-6 max-sm:px-4 max-sm:pt-10 max-sm:pb-16"
+      class="mx-auto min-h-[calc(100dvh-76px)] max-w-[1600px] px-6 pt-10 pb-16 max-sm:px-4 max-sm:pt-8 max-sm:pb-12"
     >
       <router-outlet />
     </main>

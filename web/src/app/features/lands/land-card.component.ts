@@ -58,7 +58,7 @@ import { ZardButtonComponent } from '@/shared/components/button';
           </p>
           <p class="text-muted-foreground mt-3 flex items-center gap-2 text-xs leading-[1.4]">
             <ng-icon name="fsCrop" size="18" class="text-olive shrink-0" />
-            <span class="tabular-nums">{{ area() }}</span>
+            <span class="tabular-nums">{{ cropsLabel() }} · {{ area() }}</span>
           </p>
         </div>
 
@@ -121,6 +121,8 @@ export class LandCardComponent {
     'flex min-h-[42px] w-full cursor-pointer items-center gap-2 rounded-[6px] px-3 py-2 text-left text-xs font-bold hover:bg-background focus-visible:bg-background focus-visible:outline-none';
 
   readonly land = input.required<SavedProperty>();
+  /** Distinct crops in the land's annual plan. */
+  readonly plannedCrops = input(0);
   readonly view = output<void>();
   readonly remove = output<void>();
   readonly exportGeoJson = output<void>();
@@ -130,6 +132,7 @@ export class LandCardComponent {
   protected readonly renaming = signal(false);
   protected readonly location = computed(() => landLocation(this.land().geometry));
   protected readonly area = computed(() => landArea(this.land().geometry));
+  protected readonly cropsLabel = computed(() => STRINGS.planning.cropsPlanned(this.plannedCrops()));
 
   private readonly menu = viewChild.required<ElementRef<HTMLDivElement>>('menu');
   private readonly renameInput = viewChild<ElementRef<HTMLInputElement>>('renameInput');

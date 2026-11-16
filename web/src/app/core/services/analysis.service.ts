@@ -2,19 +2,12 @@ import { computed, effect, inject, Injectable, isDevMode } from '@angular/core';
 import { area, bbox, featureCollection, intersect } from '@turf/turf';
 
 import { classesFor, KPI_THRESHOLDS, VAR_BY_KEY, type VarDef } from '../config/indices';
-import type { CellValues, ClassShare, NumericField, Overlap } from '../models';
+import type { CellValues, NumericField, Overlap, Period, StatusCode } from '../models';
 import { classColor, classIndex } from '../utils/color';
+import { CropDataService } from './crop-data.service';
 import { DataService } from './data.service';
 import { PropertyService } from './property.service';
 import { UiStateService } from './ui-state.service';
-
-export interface HistogramBin {
-  label: string;
-  from: number;
-  to: number;
-  count: number;
-  color: string;
-}
 
 export interface ScopeCell {
   pointId: number;
@@ -31,6 +24,7 @@ export interface ScopeCell {
 @Injectable({ providedIn: 'root' })
 export class AnalysisService {
   private readonly data = inject(DataService);
+  private readonly crops = inject(CropDataService);
   private readonly property = inject(PropertyService);
   private readonly ui = inject(UiStateService);
 
@@ -90,8 +84,46 @@ export class AnalysisService {
 
   readonly overlapByPoint = computed(() => new Map((this.overlaps() ?? []).map(o => [o.pointId, o])));
 
-  /** Values for the active period / month. */
-  readonly activeValues = computed(() => this.data.valuesFor(this.ui.period(), this.ui.month()));
+  /** Values for the active period / month (with the crop-fit codes when a crop tab is active). */
+  readonly activeValues = computed(() =>
+    this.withCrop(this.data.valuesFor(this.ui.period(), this.ui.month()), this.ui.period(), this.ui.month()),
+  );
+
+  /**
+   * The grid point whose ECOCROP results drive crop planning for the active land: the cell holding
+   * the largest share of the land (suitability is precomputed per point, not per area).
+   */
+  readonly dominantPoint = computed(() => this.overlaps()?.[0]?.pointId ?? null);
+
+  /** ECOCROP summary for the selected crop at the dominant point, plus the land's area by thermal status. */
+  readonly cropKpis = computed(() => {
+    const cropId = this.ui.crop();
+    const pid = this.dominantPoint();
+    if (cropId === null || pid === null) {
+      return null;
+    }
+    const s = this.crops.suitability(cropId, pid);
+    if (!s) {
+      return null;
+    }
+    const month = this.ui.month();
+    const thermalNow = this.crops.statusCodes(cropId, 'thermal', 'month', month);
+    let favorableArea = 0;
+    for (const sc of this.scope()) {
+      if (thermalNow.get(sc.pointId) === 2) {
+        favorableArea += sc.weight;
+      }
+    }
+    return {
+      favorableMonths: s.t.filter(([, st]) => st === 2).length,
+      favorableStarts: s.r.filter(([, st]) => st === 2).length,
+      thermalNow: s.t[month - 1]?.[1] ?? (-1 as StatusCode),
+      tempNow: s.t[month - 1]?.[0] ?? null,
+      rainStartNow: s.r[month - 1] ?? null,
+      annualRain: s.a,
+      favorableAreaPct: favorableArea * 100,
+    };
+  });
 
   readonly activeRange = computed(() => {
     const def = this.ui.activeDef();
@@ -120,77 +152,6 @@ export class AnalysisService {
     };
   });
 
-  /** % of the scope area in each class of the active variable (nulls excluded). */
-  readonly classShares = computed<ClassShare[]>(() => {
-    const def = this.ui.activeDef();
-    const classes = classesFor(def, this.ui.period());
-    const values = this.activeValues();
-    const sums = classes.map(() => 0);
-    let total = 0;
-    for (const s of this.scope()) {
-      const i = classIndex(values.get(s.pointId)?.[def.field], classes);
-      if (i >= 0) {
-        sums[i] += s.weight;
-        total += s.weight;
-      }
-    }
-    return classes.map((c, i) => ({
-      index: i,
-      label: c.label,
-      color: c.color,
-      pct: total > 0 ? (sums[i] / total) * 100 : 0,
-    }));
-  });
-
-  /** Histogram of the active variable over the whole region (context for the property value). */
-  readonly histogram = computed<HistogramBin[]>(() => {
-    const def = this.ui.activeDef();
-    const period = this.ui.period();
-    const values = [...this.activeValues().values()]
-      .map(v => v[def.field])
-      .filter((v): v is number => v !== null);
-    if (!values.length) {
-      return [];
-    }
-    const lo = Math.min(...values);
-    const hi = Math.max(...values);
-    const n = 12;
-    const step = (hi - lo) / n || 1;
-    const bins: HistogramBin[] = Array.from({ length: n }, (_, i) => {
-      const from = lo + i * step;
-      const to = from + step;
-      return {
-        label: fmt(from, def.decimals),
-        from,
-        to,
-        count: 0,
-        color: classColor((from + to) / 2, def, period) ?? '#9ca3af',
-      };
-    });
-    for (const v of values) {
-      bins[Math.min(n - 1, Math.floor((v - lo) / step))].count++;
-    }
-    return bins;
-  });
-
-  /** Bin label that contains the aggregated scope value (for the histogram marker). */
-  readonly histogramMarker = computed(() => {
-    const v = this.activeValue();
-    if (v === null || !this.isPropertyScope()) {
-      return null;
-    }
-    const bins = this.histogram();
-    const bin = bins.find((b, i) => v >= b.from && (v < b.to || i === bins.length - 1));
-    return bin?.label ?? null;
-  });
-
-  /** 12-month typical profile of the active variable over the scope. */
-  readonly profile = computed(() => {
-    const def = this.ui.activeDef();
-    const scope = this.scope();
-    return this.data.allMonths().map((values, i) => ({ month: i + 1, value: aggregate(def, values, scope) }));
-  });
-
   /** Rows for the "cells covering the property" table. */
   readonly cellRows = computed(() => {
     const def = this.ui.activeDef();
@@ -207,6 +168,21 @@ export class AnalysisService {
       };
     });
   });
+
+  /** Copies `values` with the selected crop's status code in crop_thermal / crop_rain (only for crop tabs). */
+  private withCrop(values: Map<number, CellValues>, period: Period, month: number): Map<number, CellValues> {
+    const key = this.ui.activeVar();
+    const cropId = this.ui.crop();
+    if ((key !== 'crop_thermal' && key !== 'crop_rain') || cropId === null) {
+      return values;
+    }
+    const codes = this.crops.statusCodes(cropId, key === 'crop_thermal' ? 'thermal' : 'rain', period, month);
+    const out = new Map<number, CellValues>();
+    for (const [pid, v] of values) {
+      out.set(pid, { ...v, [key]: codes.get(pid) ?? null });
+    }
+    return out;
+  }
 
   constructor() {
     if (isDevMode()) {

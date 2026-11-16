@@ -32,6 +32,16 @@ MIGRATIONS: list[str] = [
         PRIMARY KEY (property_id, data_version)
     );
     """,
+    # v2: one annual crop plan per property (cycles stored as JSON)
+    """
+    CREATE TABLE plans (
+        property_id INTEGER PRIMARY KEY REFERENCES properties(id) ON DELETE CASCADE,
+        status      TEXT NOT NULL CHECK (status IN ('draft', 'saved')),
+        cycles      TEXT NOT NULL,              -- JSON list of PlanCycle
+        saved_at    TEXT,
+        updated_at  TEXT NOT NULL
+    );
+    """,
 ]
 
 

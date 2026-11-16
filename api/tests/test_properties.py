@@ -98,3 +98,49 @@ def test_delete_cascades_stats(client):
     client.delete(f"/api/properties/{p['id']}")
     assert conn.execute("SELECT COUNT(*) FROM property_stats").fetchone()[0] == 0
     conn.close()
+
+
+CYCLE = {
+    "id": "c1",
+    "cropId": 1971,
+    "cropName": "Papa",
+    "shortName": "PA",
+    "source": "thermal",
+    "startMonth": 11,
+    "endMonth": 1,
+    "durationMonths": 3,
+    "notes": ["Rainfall for a November start: caution"],
+}
+
+
+def test_plan_defaults_to_empty_draft(client):
+    p = client.post("/api/properties", json={"name": "A", "geometry": SQUARE}).json()
+    r = client.get(f"/api/properties/{p['id']}/plan")
+    assert r.status_code == 200
+    assert r.json()["status"] == "draft" and r.json()["cycles"] == []
+    assert client.get("/api/properties/999/plan").status_code == 404
+
+
+def test_plan_round_trip_and_cascade(client):
+    p = client.post("/api/properties", json={"name": "A", "geometry": SQUARE}).json()
+    url = f"/api/properties/{p['id']}/plan"
+
+    r = client.put(url, json={"status": "draft", "cycles": [CYCLE]})
+    assert r.status_code == 200
+    assert r.json()["cycles"] == [CYCLE] and r.json()["savedAt"] is None
+
+    r = client.put(url, json={"status": "saved", "cycles": [CYCLE]})
+    saved = r.json()
+    assert saved["status"] == "saved" and saved["savedAt"]
+    assert client.get(url).json() == saved
+    assert [x["propertyId"] for x in client.get("/api/plans").json()] == [p["id"]]
+
+    client.delete(f"/api/properties/{p['id']}")
+    assert client.get("/api/plans").json() == []
+
+
+def test_plan_rejects_bad_months(client):
+    p = client.post("/api/properties", json={"name": "A", "geometry": SQUARE}).json()
+    bad = {**CYCLE, "startMonth": 13}
+    assert client.put(f"/api/properties/{p['id']}/plan", json={"status": "draft", "cycles": [bad]}).status_code == 422
+    assert client.put(f"/api/properties/{p['id']}/plan", json={"status": "done", "cycles": []}).status_code == 422

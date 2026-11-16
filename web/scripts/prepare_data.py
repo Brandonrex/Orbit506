@@ -12,17 +12,21 @@ Outputs:
   annual_normal.csv   192 points              (from app_data_annual_normal.csv)
   aoi.geojson         Cartago area of interest (copied)
   manifest.json       bbox, grid resolution, variables, min/max per variable per period
+  crops/*             ECOCROP crops, per-point suitability and yearly history (see prepare_crops)
 """
 from __future__ import annotations
 
 import csv
 import json
+import math
 import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "pipeline" / "data" / "processed"
 AOI_SRC = ROOT / "pipeline" / "data" / "appeears" / "cartago_area.geojson"
+CROP_SRC = ROOT / "pipeline" / "data" / "crop data"
+VARS_SRC = ROOT / "pipeline" / "data" / "Single variables data"
 OUT = ROOT / "web" / "public" / "data"
 
 RESOLUTION_DEG = 0.045  # grid step used by pipeline/src/cuadricula.py (~5 km)
@@ -55,7 +59,7 @@ def frost(tmin_extreme: float | None) -> str:
 
 
 def read_csv(path: Path) -> list[dict[str, str]]:
-    with path.open(newline="", encoding="utf-8") as f:
+    with path.open(newline="", encoding="utf-8-sig") as f:
         return list(csv.DictReader(f))
 
 
@@ -78,6 +82,99 @@ def ranges(rows: list[dict]) -> dict[str, dict[str, float]]:
         if values:
             out[var] = {"min": round(min(values), 3), "max": round(max(values), 3)}
     return out
+
+
+STATUS_CODE = {"unfavorable": 0, "caution": 1, "favorable": 2}
+CROP_FILES = {"crops": "crops/crops.json", "suitability": "crops/suitability.json", "series": "crops/series.csv"}
+SERIES_VARS = ["ndvi", "rain_mm", "tmin_c", "tmax_c", "tmin_extreme_c", "eto_mm", "balance_mm", "soil_wetness"]
+
+
+def status(value: str | None) -> int:
+    """favorable=2, caution=1, unfavorable=0, missing/unknown=-1."""
+    return STATUS_CODE.get((value or "").strip(), -1)
+
+
+def short_name(name: str) -> str:
+    return name[:2].upper()
+
+
+def prepare_crops() -> dict:
+    """ECOCROP requirements + offline suitability results -> compact files for the web app.
+
+    crops/crops.json        the 4 crops and their ECOCROP thresholds
+    crops/suitability.json  {crop_id: {point_id: {t, tw, r, rw, a}}}
+        t   12 x [mean temperature C, status]           (thermal-windows.json monthly_evaluation)
+        tw  thermal windows [start, end, cycle_months, [[cycle_start, cycle_end], ...]]
+        r   12 x [accumulated rain mm, status] per planting-start month (rainfall-windows.json)
+        rw  rainfall windows: lists of consecutive favorable planting-start months
+        a   [annual rain mm, status]                    (annual-rainfall.csv)
+        status: 2 favorable, 1 caution, 0 unfavorable, -1 unknown
+    crops/series.csv        point x year x month history (rain, tmin, tmax, ...) for the year chart
+    """
+    out = OUT / "crops"
+    out.mkdir(parents=True, exist_ok=True)
+
+    crops = []
+    rain_months: dict[int, int] = {}
+    for r in read_csv(CROP_SRC / "ecocrop-requirements.csv"):
+        cid = int(r["crop_id"])
+        gmin, gmax = float(r["growing_days_min"]), float(r["growing_days_max"])
+        rain_months[cid] = math.ceil((gmin + gmax) / 2 / 30)
+        crops.append({
+            "id": cid,
+            "name": r["crop"].strip(),
+            "shortName": short_name(r["crop"].strip()),
+            "scientificName": r["scientific_name"].strip(),
+            "temp": {"optMin": num(r["optimal_temp_min_c"]), "optMax": num(r["optimal_temp_max_c"]),
+                     "tolMin": num(r["tolerated_temp_min_c"]), "tolMax": num(r["tolerated_temp_max_c"])},
+            "rain": {"optMin": num(r["optimal_rain_min_mm_year"]), "optMax": num(r["optimal_rain_max_mm_year"]),
+                     "tolMin": num(r["tolerated_rain_min_mm_year"]), "tolMax": num(r["tolerated_rain_max_mm_year"])},
+            "growingDays": [gmin, gmax],
+            "cycleMonths": math.ceil(gmin / 30),
+            "rainDurationMonths": rain_months[cid],
+            "drainage": r["drainage"].strip().strip("[]'") or None,
+        })
+    crops.sort(key=lambda c: ["Papa", "Zanahoria", "Cebolla", "Camote"].index(c["name"])
+               if c["name"] in ("Papa", "Zanahoria", "Cebolla", "Camote") else 99)
+    (out / "crops.json").write_text(json.dumps(crops, ensure_ascii=False, indent=1), encoding="utf-8")
+
+    suit: dict[str, dict[str, dict]] = {}
+
+    def slot(cid: int, pid: int) -> dict:
+        return suit.setdefault(str(cid), {}).setdefault(str(pid), {})
+
+    for e in json.loads((VARS_SRC / "thermal-windows.json").read_text(encoding="utf-8")):
+        s = slot(e["crop_id"], e["point_id"])
+        months = sorted(e["monthly_evaluation"], key=lambda m: m["month"])
+        s["t"] = [[m["temperature_c"], status(m["status"])] for m in months]
+        s["tw"] = [[w["start_month"], w["end_month"], w["cycle_months"],
+                    [[c["start_month"], c["end_month"]] for c in w["cycles"]]] for w in e["windows"]]
+
+    for e in json.loads((VARS_SRC / "rainfall-windows.json").read_text(encoding="utf-8")):
+        s = slot(e["crop_id"], e["point_id"])
+        cands = sorted(e["candidates"], key=lambda c: c["start_month"])
+        s["r"] = [[c["rain_total_mm"], status(c["status"])] for c in cands]
+        s["rw"] = [w["planting_months"] for w in e["windows"]]
+
+    for r in read_csv(VARS_SRC / "annual-rainfall.csv"):
+        slot(int(r["crop_id"]), int(r["point_id"]))["a"] = [num(r["annual_rain_mm"]), status(r["status"])]
+
+    (out / "suitability.json").write_text(json.dumps(suit, separators=(",", ":")), encoding="utf-8")
+
+    series = []
+    for r in read_csv(SRC / "app_data_series.csv"):
+        row = {"point_id": int(r["point_id"]), "year": int(r["year"]), "month": int(r["month"])}
+        for var in SERIES_VARS:
+            row[var] = num(r.get(var, ""))
+        series.append(row)
+    series.sort(key=lambda r: (r["point_id"], r["year"], r["month"]))
+    write_csv(out / "series.csv", ["point_id", "year", "month"] + SERIES_VARS, series)
+    years = sorted({r["year"] for r in series})
+
+    pairs = sum(len(v) for v in suit.values())
+    print(f"crops.json: {len(crops)} crops; suitability.json: {pairs} point-crop pairs (expected 768)")
+    print(f"series.csv: {len(series)} rows, years {years[0]}-{years[-1]}")
+    return {"years": years}
 
 
 def main() -> None:
@@ -146,6 +243,10 @@ def main() -> None:
         "variables": NUMERIC_VARS + ["frost_risk"],
         "ranges": {"month": ranges(typical), "normal": ranges(normal)},
     }
+
+    crops_info = prepare_crops()
+    manifest["files"].update(CROP_FILES)
+    manifest["years"] = crops_info["years"]
     (OUT / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
     print(f"typical_month.csv: {len(typical)} rows (expected 2304)")

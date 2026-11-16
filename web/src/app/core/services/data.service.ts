@@ -12,9 +12,9 @@ import {
   type Period,
 } from '../models';
 
-const DATA_URL = 'data/';
+export const DATA_URL = 'data/';
 
-type Row = Record<string, string | number | null>;
+export type Row = Record<string, string | number | null>;
 
 /**
  * Loads the prepared data from public/data/ (see web/scripts/prepare_data.py).
@@ -132,7 +132,7 @@ function toValues(r: Row): CellValues {
   return v;
 }
 
-async function fetchJson<T>(url: string): Promise<T> {
+export async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) {
     throw new Error(`${url}: HTTP ${res.status}`);
@@ -144,7 +144,7 @@ async function fetchJson<T>(url: string): Promise<T> {
  * The files are small (< 300 KB), so they are parsed on the main thread. For much larger
  * files switch to `worker: true` (PapaParse then needs its standalone script URL).
  */
-function parseCsv(url: string): Promise<Row[]> {
+export function parseCsv(url: string): Promise<Row[]> {
   return new Promise((resolve, reject) => {
     Papa.parse<Row>(url, {
       download: true,

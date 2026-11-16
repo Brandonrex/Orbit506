@@ -34,3 +34,28 @@ class PropertyOut(CamelModel):
     area_m2: float
     created_at: str
     updated_at: str
+
+
+class PlanCycle(CamelModel):
+    """One planned crop cycle. Months are 1-12; end < start means the cycle wraps past December."""
+
+    id: str = Field(min_length=1, max_length=80)
+    crop_id: int
+    crop_name: str = Field(min_length=1, max_length=60)
+    short_name: str = Field(min_length=1, max_length=4)
+    source: Literal["thermal", "rainfall"]
+    start_month: int = Field(ge=1, le=12)
+    end_month: int = Field(ge=1, le=12)
+    duration_months: int = Field(ge=1, le=12)
+    notes: list[str] = Field(default_factory=list, max_length=24)
+
+
+class PlanIn(CamelModel):
+    status: Literal["draft", "saved"]
+    cycles: list[PlanCycle] = Field(default_factory=list, max_length=48)
+
+
+class PlanOut(PlanIn):
+    property_id: int
+    saved_at: str | None = None
+    updated_at: str | None = None

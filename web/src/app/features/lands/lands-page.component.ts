@@ -5,6 +5,7 @@ import { lucideRefreshCw, lucideServerOff } from '@ng-icons/lucide';
 
 import { STRINGS } from '@/core/i18n/strings';
 import type { SavedProperty } from '@/core/models';
+import { PlanService } from '@/core/services/plan.service';
 import { PropertyService } from '@/core/services/property.service';
 import { ZardButtonComponent } from '@/shared/components/button';
 import { ZardEmptyComponent } from '@/shared/components/empty';
@@ -71,10 +72,11 @@ import { LandCardComponent } from './land-card.component';
               <h2 id="lands-title" class="text-lg tracking-[-0.015em]">{{ t.listTitle }}</h2>
               <p class="text-muted-foreground text-[13px] font-semibold">{{ t.count(store.properties().length) }}</p>
             </div>
-            <div class="grid grid-cols-3 gap-5 max-[960px]:grid-cols-2 max-sm:grid-cols-1">
+            <div class="grid grid-cols-3 gap-5 2xl:grid-cols-4 max-[960px]:grid-cols-2 max-sm:grid-cols-1">
               @for (land of store.properties(); track land.id) {
                 <af-land-card
                   [land]="land"
+                  [plannedCrops]="plans.plannedCrops(land.id)"
                   (view)="open(land.id)"
                   (remove)="pendingDelete.set(land)"
                   (rename)="store.rename(land.id, $event)"
@@ -115,7 +117,7 @@ import { LandCardComponent } from './land-card.component';
       @default {
         <section class="mt-16">
           <z-skeleton class="mb-6 h-10 rounded-sm" />
-          <div class="grid grid-cols-3 gap-5 max-[960px]:grid-cols-2 max-sm:grid-cols-1">
+          <div class="grid grid-cols-3 gap-5 2xl:grid-cols-4 max-[960px]:grid-cols-2 max-sm:grid-cols-1">
             @for (i of [1, 2, 3]; track i) {
               <z-skeleton class="h-[262px] rounded-lg" />
             }
@@ -135,6 +137,7 @@ import { LandCardComponent } from './land-card.component';
 export class LandsPageComponent {
   protected readonly t = STRINGS.lands;
   protected readonly store = inject(PropertyService);
+  protected readonly plans = inject(PlanService);
   private readonly router = inject(Router);
   private readonly toast = inject(ZardSonnerService);
 
@@ -144,6 +147,10 @@ export class LandsPageComponent {
   protected readonly offlineDescription = computed(() =>
     this.store.offlineReason() === 'no-proxy' ? STRINGS.properties.noProxyDescription : this.t.offlineDescription,
   );
+
+  constructor() {
+    void this.plans.loadSummaries();
+  }
 
   protected open(id: number): void {
     void this.router.navigate(['/lands', id]);

@@ -3,7 +3,7 @@ import { inject, Injectable } from '@angular/core';
 import type { Polygon } from 'geojson';
 import { firstValueFrom, type Observable } from 'rxjs';
 
-import type { PropertyPatch, SavedProperty } from '../models';
+import type { LandPlan, PlanCycle, PropertyPatch, SavedProperty } from '../models';
 
 const BASE = '/api/properties';
 
@@ -43,6 +43,19 @@ export class PropertyApiService {
 
   remove(id: number): Promise<void> {
     return call(this.http.delete<void>(`${BASE}/${id}`));
+  }
+
+  /** Every stored annual plan (lands page summary). */
+  listPlans(): Promise<LandPlan[]> {
+    return call(this.http.get<LandPlan[]>('/api/plans'));
+  }
+
+  getPlan(id: number): Promise<LandPlan> {
+    return call(this.http.get<LandPlan>(`${BASE}/${id}/plan`));
+  }
+
+  putPlan(id: number, body: { status: LandPlan['status']; cycles: PlanCycle[] }): Promise<LandPlan> {
+    return call(this.http.put<LandPlan>(`${BASE}/${id}/plan`, body));
   }
 }
 

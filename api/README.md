@@ -20,7 +20,10 @@ The database is `api/data/app.db` (gitignored). It is created and migrated on st
 | POST | `/api/properties` | `{ name, notes?, geometry }` → 201 + property |
 | GET | `/api/properties/{id}` | property |
 | PATCH | `/api/properties/{id}` | any of `{ name, notes, geometry }` |
-| DELETE | `/api/properties/{id}` | 204 |
+| DELETE | `/api/properties/{id}` | 204 (its plan is deleted too) |
+| GET | `/api/properties/{id}/plan` | annual crop plan; `{ status: 'draft', cycles: [] }` if none yet |
+| PUT | `/api/properties/{id}/plan` | `{ status: 'draft' \| 'saved', cycles }` → stored plan |
+| GET | `/api/plans` | every stored plan (the lands page counts planned crops) |
 | GET | `/api/health` | `{ ok: true }` |
 
 `geometry` is a GeoJSON **Polygon** in EPSG:4326 (lon, lat). The API closes open rings and rejects invalid shapes with **422** `{"detail": {"reason": "self-intersection" | "invalid"}}`. `areaM2` is geodesic on the WGS84 ellipsoid (`pyproj.Geod`). The web app displays `turf.area` (spherical), which differs by ~0.4 % at Cartago's latitude. JSON fields are camelCase.
@@ -28,6 +31,7 @@ The database is `api/data/app.db` (gitignored). It is created and migrated on st
 ## Schema (`app/db.py`)
 
 - `properties`: id, name, notes, geometry (GeoJSON text), area_m2, bbox (min/max lon/lat), created_at, updated_at
+- `plans` (v2): one row per property: status, cycles (JSON list of `{ id, cropId, cropName, shortName, source: 'thermal' | 'rainfall', startMonth, endMonth, durationMonths, notes }`; `endMonth < startMonth` wraps past December), saved_at, updated_at. Deleted with the property.
 - `property_stats`: per-property results keyed by `data_version`, as JSON. The table is empty for now (see below). Rows are deleted when the property's geometry changes, and when the property is deleted (cascade).
 
 Migrations are an append-only list in `db.py`, tracked with `PRAGMA user_version`.

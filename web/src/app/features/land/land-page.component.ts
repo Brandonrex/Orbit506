@@ -6,6 +6,7 @@ import { lucideMapPinOff, lucideServerOff } from '@ng-icons/lucide';
 import { unitFor } from '@/core/config/indices';
 import { STRINGS } from '@/core/i18n/strings';
 import { AnalysisService, fmt } from '@/core/services/analysis.service';
+import { CropDataService } from '@/core/services/crop-data.service';
 import { PropertyService } from '@/core/services/property.service';
 import { UiStateService } from '@/core/services/ui-state.service';
 import { rampGradient } from '@/core/utils/color';
@@ -17,11 +18,15 @@ import { ZardSkeletonComponent } from '@/shared/components/skeleton';
 import { DashboardComponent } from '../dashboard/dashboard.component';
 import { LegendComponent } from '../map/legend.component';
 import { MapComponent } from '../map/map.component';
+import { AnnualPlanComponent } from '../planning/annual-plan.component';
+import { EnvironmentHistoryComponent } from '../planning/environment-history.component';
+import { PlanningSectionComponent } from '../planning/planning-section.component';
 import { ConditionsControlsComponent } from './conditions-controls.component';
 
 /**
  * One land's analysis (Figma: PlanningWorkspace). `/lands/:id` focuses a land; `/region` shows the
- * whole data area. Layout: back link → title → conditions (tabs, map card + legend panel) → summary.
+ * whole data area. Layout: back link → title → conditions tabs → map with crop planning right below
+ * (left) and the environmental chart, legend and KPIs (right) → annual plan → cells table.
  */
 @Component({
   selector: 'af-land-page',
@@ -35,6 +40,9 @@ import { ConditionsControlsComponent } from './conditions-controls.component';
     MapComponent,
     LegendComponent,
     DashboardComponent,
+    EnvironmentHistoryComponent,
+    PlanningSectionComponent,
+    AnnualPlanComponent,
   ],
   providers: [provideIcons({ lucideMapPinOff, lucideServerOff })],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -75,53 +83,58 @@ import { ConditionsControlsComponent } from './conditions-controls.component';
 
       <section class="mt-12" aria-labelledby="conditions-title">
         <h2 id="conditions-title" class="mt-1 text-[26px] leading-tight tracking-[-0.025em]">{{ t.conditionsTitle }}</h2>
-        <p class="text-muted-foreground mt-1 text-[13px]">{{ t.conditionsDescription }}</p>
+        <p class="text-muted-foreground mt-1 text-[13px]">{{ t.conditionsDescription }} · {{ periodLabel() }}</p>
 
         <af-conditions-controls />
 
-        <div class="mt-6 grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
-          <!-- Map card (Figma: .saved-land-map-card) -->
-          <div class="bg-card shadow-soft min-w-0 overflow-hidden rounded-lg border">
-            <div class="flex min-h-[76px] items-center gap-3 px-5 py-4">
-              <span class="bg-accent text-primary flex size-10 shrink-0 items-center justify-center rounded-sm">
-                <ng-icon name="fsPin" size="19" />
-              </span>
-              <div class="flex min-w-0 flex-1 flex-col">
-                <strong class="truncate text-sm">{{ title() }}</strong>
-                <small class="text-muted-foreground truncate text-[11px]">{{ location() }}</small>
+        <!-- Left: map, then crop planning right below it. Right: the environmental chart, legend, KPIs. -->
+        <div class="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_420px] 2xl:grid-cols-[minmax(0,1fr)_480px]">
+          <div class="min-w-0 space-y-8">
+            <div class="bg-card shadow-soft overflow-hidden rounded-lg border">
+              <div class="flex min-h-[76px] items-center gap-3 px-5 py-4">
+                <span class="bg-accent text-primary flex size-10 shrink-0 items-center justify-center rounded-sm">
+                  <ng-icon name="fsPin" size="19" />
+                </span>
+                <div class="flex min-w-0 flex-1 flex-col">
+                  <strong class="truncate text-sm">{{ title() }}</strong>
+                  <small class="text-muted-foreground truncate text-[11px]">{{ location() }}</small>
+                </div>
+                @if (!isRegion()) {
+                  <span class="bg-accent text-sage-text shrink-0 rounded-full px-3 py-1 text-[10px] font-bold">{{ t.boundarySaved }}</span>
+                }
               </div>
-              @if (!isRegion()) {
-                <span class="bg-accent text-sage-text shrink-0 rounded-full px-3 py-1 text-[10px] font-bold">{{ t.boundarySaved }}</span>
-              }
+              <af-map class="border-t [--map-h:520px]" />
             </div>
-            <af-map class="border-t [--map-h:380px]" />
+            <af-planning-section [landId]="land()?.id ?? null" />
           </div>
 
-          <!-- Legend panel (Figma: .crop-panel) -->
-          <aside class="bg-card shadow-soft rounded-lg border p-5" [attr.aria-label]="t.legendEyebrow">
-            <p class="text-primary mb-3 text-xs font-bold tracking-widest uppercase">{{ t.legendEyebrow }}</p>
-            <af-legend
-              [title]="ui.activeDef().label"
-              [unit]="unit()"
-              [classes]="ui.activeClasses()"
-              [mode]="ui.renderMode()"
-              [gradient]="gradient()"
-              [rangeLabel]="rangeLabel()"
-              [hovered]="ui.hoveredClass()"
-              [provisional]="ui.activeDef().provisional"
-              [clipToggle]="store.hasProperty()"
-              [fullCells]="ui.fullCells()"
-              (hoverClass)="ui.hoveredClass.set($event)"
-              (fullCellsChange)="ui.fullCells.set($event)"
-            />
+          <aside class="min-w-0 space-y-5" [attr.aria-label]="t.summaryTitle">
+            <af-environment-history />
+            <div class="bg-card shadow-soft rounded-lg border p-5">
+              <p class="text-primary mb-3 text-xs font-bold tracking-widest uppercase">{{ t.legendEyebrow }}</p>
+              <af-legend
+                [title]="legendTitle()"
+                [unit]="unit()"
+                [classes]="ui.activeClasses()"
+                [mode]="ui.renderMode()"
+                [gradient]="gradient()"
+                [rangeLabel]="rangeLabel()"
+                [hovered]="ui.hoveredClass()"
+                [provisional]="ui.activeDef().provisional"
+                [clipToggle]="store.hasProperty()"
+                [fullCells]="ui.fullCells()"
+                (hoverClass)="ui.hoveredClass.set($event)"
+                (fullCellsChange)="ui.fullCells.set($event)"
+              />
+            </div>
+            <af-dashboard section="kpis" />
           </aside>
         </div>
-      </section>
 
-      <section class="mt-12" aria-labelledby="summary-title">
-        <h2 id="summary-title" class="mt-1 text-[26px] leading-tight tracking-[-0.025em]">{{ t.summaryTitle }}</h2>
-        <p class="text-muted-foreground mt-1 text-[13px]">{{ periodLabel() }}</p>
-        <af-dashboard class="mt-6" />
+        @if (land()) {
+          <af-annual-plan class="mt-10" />
+        }
+        <af-dashboard class="mt-6 block" section="table" />
       </section>
     }
   `,
@@ -132,6 +145,7 @@ export class LandPageComponent {
   protected readonly store = inject(PropertyService);
   protected readonly ui = inject(UiStateService);
   private readonly analysis = inject(AnalysisService);
+  private readonly crops = inject(CropDataService);
 
   /** Route param (`/lands/:id`); undefined on `/region`. */
   readonly id = input<string>();
@@ -151,6 +165,11 @@ export class LandPageComponent {
     return land ? landArea(land.geometry) : '';
   });
 
+  protected readonly legendTitle = computed(() => {
+    const crop = this.crops.crop(this.ui.crop());
+    const def = this.ui.activeDef();
+    return crop && (def.key === 'crop_thermal' || def.key === 'crop_rain') ? `${def.label} · ${crop.name}` : def.label;
+  });
   protected readonly unit = computed(() => unitFor(this.ui.activeDef(), this.ui.period()));
   protected readonly gradient = computed(() => rampGradient(this.ui.activeDef(), this.ui.period()));
   protected readonly rangeLabel = computed(() => {

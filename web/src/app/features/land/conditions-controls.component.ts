@@ -1,8 +1,9 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 
-import { VARIABLES } from '@/core/config/indices';
+import { CROP_VARIABLES, VARIABLES } from '@/core/config/indices';
 import { STRINGS } from '@/core/i18n/strings';
 import type { Period, RenderMode } from '@/core/models';
+import { CropDataService } from '@/core/services/crop-data.service';
 import { UiStateService } from '@/core/services/ui-state.service';
 import { ZardSelectImports } from '@/shared/components/select';
 import { ZardToggleGroupComponent, type ZardToggleGroupItem } from '@/shared/components/toggle-group';
@@ -18,7 +19,7 @@ import { ZardToggleGroupComponent, type ZardToggleGroupItem } from '@/shared/com
   host: { class: 'block' },
   template: `
     <div role="tablist" [attr.aria-label]="h.variable" class="mt-8 flex gap-6 overflow-x-auto border-b [scrollbar-width:thin]">
-      @for (v of variables; track v.key) {
+      @for (v of variables(); track v.key) {
         <button
           type="button"
           role="tab"
@@ -28,6 +29,9 @@ import { ZardToggleGroupComponent, type ZardToggleGroupItem } from '@/shared/com
           [attr.aria-selected]="ui.activeVar() === v.key"
           (click)="ui.setVar(v.key)"
         >
+          @if (v.key === 'crop_thermal' || v.key === 'crop_rain') {
+            <span class="bg-primary text-primary-foreground mr-1.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold">{{ cropShort() }}</span>
+          }
           {{ v.shortLabel }}
         </button>
       }
@@ -74,7 +78,10 @@ export class ConditionsControlsComponent {
   protected readonly h = STRINGS.header;
   protected readonly ui = inject(UiStateService);
 
-  protected readonly variables = VARIABLES;
+  private readonly crops = inject(CropDataService);
+  /** The two crop-fit tabs appear once a crop is chosen in the planning section. */
+  protected readonly variables = computed(() => (this.ui.crop() === null ? VARIABLES : [...VARIABLES, ...CROP_VARIABLES]));
+  protected readonly cropShort = computed(() => this.crops.crop(this.ui.crop())?.shortName ?? '');
   protected readonly periodItems: ZardToggleGroupItem[] = [
     { value: 'month', label: STRINGS.header.typicalMonth },
     { value: 'normal', label: STRINGS.header.annualNormal },
