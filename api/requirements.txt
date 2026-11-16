@@ -2,6 +2,17 @@ fastapi>=0.115
 uvicorn[standard]>=0.30
 shapely>=2.0
 pyproj>=3.6
+# Sentinel-2 detail layer (pipeline/src/detail + app/detail_api)
+pystac-client>=0.8
+odc-stac>=0.5
+xarray>=2025.1
+rioxarray>=0.18
+rasterio>=1.4
+numpy>=2.0
+scipy>=1.13
+rio-cogeo>=7.0
+planetary-computer>=1.0
+titiler.core>=2.0
 # tests
 pytest>=8
 httpx>=0.27

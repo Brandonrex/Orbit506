@@ -194,3 +194,93 @@ export interface SeriesMonth {
   balance_mm: number | null;
   soil_wetness: number | null;
 }
+
+// ---------- Sentinel-2 detail layer (10 m, api/app/detail_api) ----------
+export type DetailIndex = 'ndvi' | 'ndmi' | 'ndre';
+/** Everything the detail map layer can draw; days since clear exists for monthly composites only. */
+export type DetailLayer = DetailIndex | 'days_since_clear';
+export type DetailJobStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
+
+export interface DetailJob {
+  id: number;
+  status: DetailJobStatus;
+  kind: 'full' | 'incremental';
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  dateFrom: string;
+  dateTo: string;
+  source: string | null;
+  scenesFound: number;
+  scenesDone: number;
+  scenesValid: number;
+  /** 0–1 */
+  progress: number;
+  errorReason: 'area-too-large' | 'search-failed' | 'interrupted' | 'internal' | null;
+  error: string | null;
+}
+
+export interface DetailStatus {
+  job: DetailJob | null;
+  scenesValid: number;
+  scenesCloudy: number;
+  lastAcquired: string | null;
+  lastClearDate: string | null;
+  daysSinceClear: number | null;
+  attribution: string;
+}
+
+export interface DetailScene {
+  date: string;
+  status: 'valid' | 'cloudy' | 'error';
+  validPct: number | null;
+  cloudCoverScene: number | null;
+  source: string;
+  stacItemId: string;
+  assets: Partial<Record<DetailIndex, number>>;
+}
+
+export interface DetailComposite {
+  /** 'YYYY-MM', or 'latest' (days since clear counted to today). */
+  period: string;
+  nDays: number;
+  assets: Partial<Record<DetailLayer, number>>;
+}
+
+export interface DetailStat {
+  date: string;
+  mean: number | null;
+  median: number | null;
+  p10: number | null;
+  p90: number | null;
+  std: number | null;
+  validPct: number;
+  nPixels: number;
+  /** class label → % of the clear pixels */
+  classDist: Record<string, number>;
+}
+
+export interface DetailClass {
+  min: number | null;
+  max: number | null;
+  label: string;
+  meaning: string;
+  color: string;
+}
+
+export interface DetailLayerDef {
+  key: DetailLayer;
+  label: string;
+  formula: string;
+  provisional: boolean;
+  range: [number, number];
+  classes: DetailClass[];
+}
+
+export interface DetailPoint {
+  date: string;
+  lon: number;
+  lat: number;
+  inside: boolean;
+  values: Partial<Record<DetailLayer, { value: number | null; classLabel: string | null; color: string | null }>>;
+}

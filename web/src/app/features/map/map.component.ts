@@ -23,6 +23,7 @@ import { STRINGS } from '@/core/i18n/strings';
 import type { Overlap, PropertyFeature, SavedProperty } from '@/core/models';
 import { AnalysisService, fmt } from '@/core/services/analysis.service';
 import { DataService } from '@/core/services/data.service';
+import { DetailService } from '@/core/services/detail.service';
 import { PropertyService } from '@/core/services/property.service';
 import { UiStateService } from '@/core/services/ui-state.service';
 import { classIndex, cssToken, rampColor, rampStops } from '@/core/utils/color';
@@ -33,6 +34,10 @@ import { MAP_HINT_CLASS, MAP_TOOL_CLASS, MAP_TOOLBAR_CLASS } from './map-ui';
 const EDIT_DEBOUNCE_MS = 150;
 /** Property outlines sit above the cell canvas (overlayPane = 400) and below markers (600). */
 const PROPERTY_PANE = 'properties';
+/** Sentinel-2 10 m layer: above the cells and their clip pieces, below the property outlines. */
+const DETAIL_PANE = 'detail';
+/** Tiles are requested up to this zoom and scaled (crisp) beyond it. */
+const DETAIL_NATIVE_ZOOM = 18;
 
 interface PropertyLayer {
   layer: Leaflet.Polygon;
@@ -96,7 +101,10 @@ export class MapComponent {
   protected readonly property = inject(PropertyService);
   protected readonly ui = inject(UiStateService);
   private readonly analysis = inject(AnalysisService);
+  private readonly detail = inject(DetailService);
   private readonly router = inject(Router);
+  private detailLayer?: Leaflet.TileLayer;
+  private detailBounds?: Leaflet.LatLngBounds;
 
   private readonly mapEl = viewChild.required<ElementRef<HTMLDivElement>>('mapEl');
 
@@ -128,12 +136,18 @@ export class MapComponent {
       return this.e.hintRegion;
     }
     const t = this.tool();
+    if (!t && this.detailShown()) {
+      return STRINGS.detail.mapHint;
+    }
     return t === 'edit' ? this.e.hintEdit : t === 'move' ? this.e.hintMove : this.e.hintIdle;
   });
   protected readonly mapLabel = computed(() => {
     const name = this.property.active()?.name;
     return name ? STRINGS.land.mapLabel(name) : STRINGS.land.regionTitle;
   });
+
+  /** The 10 m layer is drawn over the active land. */
+  private readonly detailShown = computed(() => this.detail.onMap() && this.detail.tileUrl() !== null && this.property.hasProperty());
 
   /** Returns a color for a value under the current variable / period / render mode. */
   private readonly colorFn = computed(() => {
@@ -211,6 +225,8 @@ export class MapComponent {
       const overlaps = this.analysis.overlapByPoint();
       const hasProperty = this.property.hasProperty();
       const clipped = hasProperty && !this.ui.fullCells();
+      // The 10 m layer replaces the coarse colors inside the land; the cells stay as context outside.
+      const detailShown = this.detailShown();
       // Zoomed in on a farm, one 5 km cell fills the screen: fade it so the imagery stays visible.
       const baseOpacity = this.zoom() >= MAP_STYLE.closeZoom ? MAP_STYLE.cellOpacityClose : MAP_STYLE.cellOpacity;
       const stroke = cssToken('--map-cell-stroke', '#ffffff');
@@ -261,10 +277,21 @@ export class MapComponent {
           piece.setStyle({
             stroke: false,
             fillColor: fill ?? 'transparent',
-            fillOpacity: fill ? hoverOpacity(v, MAP_STYLE.clipOpacity) : 0,
+            fillOpacity: fill && !detailShown ? hoverOpacity(v, MAP_STYLE.clipOpacity) : 0,
           });
         }
       }
+    });
+
+    // Sentinel-2 10 m layer of the active land (selected index and date from DetailService).
+    effect(() => {
+      const url = this.detailShown() ? this.detail.tileUrl() : null;
+      const geometry = this.property.active()?.geometry;
+      const attribution = this.detail.status()?.attribution ?? '';
+      if (!this.mapReady()) {
+        return;
+      }
+      untracked(() => this.renderDetail(url, geometry, attribution));
     });
 
     // Draw / redraw the saved properties (only the active one is editable).
@@ -298,6 +325,9 @@ export class MapComponent {
     map.setView([9.8, -83.76], 10);
 
     map.createPane(PROPERTY_PANE).style.zIndex = '450';
+    const detailPane = map.createPane(DETAIL_PANE);
+    detailPane.style.zIndex = '420';
+    detailPane.style.pointerEvents = 'none'; // clicks go to the land polygon (inspect) above
 
     map.on('zoomend', () => this.zoom.set(map.getZoom()));
     this.cellGroup = L.layerGroup().addTo(map);
@@ -404,11 +434,74 @@ export class MapComponent {
         this.editTimer = setTimeout(() => this.pushGeometry(p.id, layer), EDIT_DEBOUNCE_MS);
       };
       layer.on('pm:markerdrag pm:drag pm:edit pm:vertexadded pm:vertexremoved', schedule);
+      layer.on('click', (e: Leaflet.LeafletMouseEvent) => void this.inspect(e.latlng));
     } else {
       layer.on('click', () => void this.router.navigate(['/lands', p.id]));
     }
     layer.addTo(this.propertyGroup!);
     return layer;
+  }
+
+  /** Adds, updates or removes the 10 m tile layer. Pixels are drawn square (no smoothing). */
+  private renderDetail(url: string | null, geometry: Polygon | undefined, attribution: string): void {
+    const map = this.map;
+    if (!map) {
+      return;
+    }
+    if (!url || !geometry) {
+      this.detailLayer?.remove();
+      this.detailLayer = this.detailBounds = undefined;
+      return;
+    }
+    // Only request tiles over the land (the API answers transparent tiles elsewhere anyway).
+    const bounds = L.geoJSON(geometry).getBounds().pad(0.05);
+    if (this.detailLayer && this.detailBounds?.equals(bounds)) {
+      this.detailLayer.setUrl(url);
+      return;
+    }
+    this.detailLayer?.remove();
+    const layer = L.tileLayer(url, {
+      pane: DETAIL_PANE,
+      bounds,
+      maxNativeZoom: DETAIL_NATIVE_ZOOM,
+      maxZoom: 19,
+      minZoom: 11,
+      opacity: 0.95,
+      attribution,
+      className: 'af-detail-tiles',
+    });
+    layer.on('tileload', (e: Leaflet.TileEvent) => (e.tile.style.imageRendering = 'pixelated'));
+    this.detailLayer = layer.addTo(map);
+    this.detailBounds = bounds;
+  }
+
+  /** Popup with every 10 m layer's value at the clicked pixel (selected day or month). */
+  private async inspect(latlng: Leaflet.LatLng): Promise<void> {
+    const map = this.map;
+    if (!map || this.tool() || !this.detailShown()) {
+      return;
+    }
+    const popup = L.popup({ maxWidth: 260 }).setLatLng(latlng).setContent(STRINGS.detail.reading).openOn(map);
+    const point = await this.detail.inspect(latlng.lng, latlng.lat);
+    popup.setContent(this.pointHtml(point));
+  }
+
+  private pointHtml(point: Awaited<ReturnType<DetailService['inspect']>>): string {
+    const d = STRINGS.detail;
+    if (!point) {
+      return d.readFailed;
+    }
+    const title = `<div style="font-weight:600;margin-bottom:4px">${d.periodLabel(point.date)}</div>`;
+    if (!point.inside) {
+      return title + `<div>${d.noPixel}</div>`;
+    }
+    const rows = Object.entries(point.values).map(([key, v]) => {
+      const label = this.detail.defs().find(x => x.key === key)?.label.split(' – ')[0] ?? key;
+      const value = v?.value === null || v?.value === undefined ? '–' : key === 'days_since_clear' ? `${v.value} d` : v.value.toFixed(2);
+      const swatch = v?.color ? `<i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${v.color};margin-right:6px"></i>` : '';
+      return `<div style="display:flex;align-items:center;gap:4px">${swatch}<span style="opacity:.7;min-width:96px">${label}</span><b>${value}</b>${v?.classLabel ? `<span style="opacity:.7">&nbsp;· ${v.classLabel}</span>` : ''}</div>`;
+    });
+    return title + rows.join('') + `<div style="opacity:.6;margin-top:4px">${d.pixelNote}</div>`;
   }
 
   /** Sends an edited geometry to the store. Records it first so the redraw effect skips this layer. */

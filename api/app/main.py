@@ -12,7 +12,14 @@ from fastapi import Depends, FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 
-from .db import get_conn, migrate
+from titiler.core.errors import DEFAULT_STATUS_CODES, add_exception_handlers
+
+from .db import connect, get_conn, migrate
+from .detail_api import jobs as detail_jobs
+from .detail_api import store as detail_store
+from .detail_api.models import DetailJobRef
+from .detail_api.routes import router as detail_router
+from .detail_api.tiles import cog as detail_cog
 from .geo import CheckedPolygon, GeometryError, check_polygon
 from .models import PlanIn, PlanOut, PropertyIn, PropertyOut, PropertyPatch
 
@@ -20,6 +27,14 @@ from .models import PlanIn, PlanOut, PropertyIn, PropertyOut, PropertyPatch
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     migrate()
+    conn = connect()
+    try:
+        detail_store.backfill_geometry_meta(conn)
+    finally:
+        conn.close()
+    detail_jobs.RUNNER.start()
+    detail_jobs.RUNNER.recover()
+    detail_jobs.RUNNER.purge()  # optional TTL (AF_DETAIL_TTL_DAYS); then hourly when the worker is idle
     yield
 
 
@@ -30,6 +45,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Sentinel-2 10 m detail per property (app/detail_api, processing in pipeline/src/detail)
+app.include_router(detail_router)
+app.include_router(detail_cog.router, prefix="/api/detail/cog", tags=["detail tiles"])
+add_exception_handlers(app, DEFAULT_STATUS_CODES)  # rio-tiler errors → 4xx instead of 500
 
 Conn = Annotated[sqlite3.Connection, Depends(get_conn)]
 
@@ -94,7 +113,14 @@ def create_property(body: PropertyIn, conn: Conn):
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (body.name.strip(), body.notes, json.dumps(poly.geometry), poly.area_m2, *poly.bbox, ts, ts),
         )
-    return to_out(fetch(conn, cur.lastrowid))
+        detail_store.set_geometry_meta(conn, cur.lastrowid, poly.geometry)
+    out = to_out(fetch(conn, cur.lastrowid))
+    out.detail_job = job_ref(detail_jobs.request_job(conn, out.id))
+    return out
+
+
+def job_ref(job: sqlite3.Row) -> DetailJobRef:
+    return DetailJobRef(id=job["id"], status=job["status"])
 
 
 @app.get("/api/properties/{pid}", response_model=PropertyOut)
@@ -104,7 +130,7 @@ def get_property(pid: int, conn: Conn):
 
 @app.patch("/api/properties/{pid}", response_model=PropertyOut)
 def update_property(pid: int, body: PropertyPatch, conn: Conn):
-    fetch(conn, pid)
+    old_hash = fetch(conn, pid)["geom_hash"]
     patch = body.model_dump(exclude_unset=True)
     sets: dict[str, object] = {}
     if patch.get("name") is not None:
@@ -130,14 +156,22 @@ def update_property(pid: int, body: PropertyPatch, conn: Conn):
             if "geometry" in sets:
                 # Stats were computed for the old shape.
                 conn.execute("DELETE FROM property_stats WHERE property_id = ?", (pid,))
-    return to_out(fetch(conn, pid))
+                new_hash = detail_store.set_geometry_meta(conn, pid, json.loads(sets["geometry"]))
+    out = to_out(fetch(conn, pid))
+    if "geometry" in sets:
+        if new_hash != old_hash:
+            detail_store.clear_detail(conn, pid)  # 10 m layers of the old shape are stale
+        # New shape: full fetch. Same shape saved again: only acquisitions since the last one.
+        out.detail_job = job_ref(detail_jobs.request_job(conn, pid))
+    return out
 
 
 @app.delete("/api/properties/{pid}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_property(pid: int, conn: Conn):
     fetch(conn, pid)
     with conn:
-        conn.execute("DELETE FROM properties WHERE id = ?", (pid,))
+        conn.execute("DELETE FROM properties WHERE id = ?", (pid,))  # detail rows cascade
+    detail_store.remove_files(pid)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

@@ -8,3 +8,6 @@ pipeline/data/raw/
 # API: local SQLite database and test cache
 api/data/
 .pytest_cache/
+
+# Sentinel-2 10 m detail per property (COGs + job logs), regenerated on demand by the API
+pipeline/data/property_detail/

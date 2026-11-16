@@ -42,6 +42,73 @@ MIGRATIONS: list[str] = [
         updated_at  TEXT NOT NULL
     );
     """,
+    # v3: Sentinel-2 10 m detail per property (app/detail_api, pipeline/src/detail)
+    """
+    ALTER TABLE properties ADD COLUMN geom_hash TEXT;            -- detail/geometry.py geom_hash()
+    ALTER TABLE properties ADD COLUMN utm_epsg INTEGER;          -- output CRS of the detail layers
+    ALTER TABLE properties ADD COLUMN detail_touched_at TEXT;    -- last save / detail read (TTL purge)
+
+    CREATE TABLE detail_jobs (
+        id           INTEGER PRIMARY KEY,
+        property_id  INTEGER NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+        kind         TEXT NOT NULL CHECK (kind IN ('full', 'incremental')),
+        geom_hash    TEXT NOT NULL,
+        status       TEXT NOT NULL CHECK (status IN ('queued', 'running', 'done', 'failed', 'cancelled')),
+        created_at   TEXT NOT NULL,
+        started_at   TEXT,
+        finished_at  TEXT,
+        date_from    TEXT NOT NULL,             -- YYYY-MM-DD
+        date_to      TEXT NOT NULL,
+        source       TEXT,                      -- catalogue that answered: 'earth-search' | 'pc'
+        scenes_found INTEGER NOT NULL DEFAULT 0,  -- acquisition days to process
+        scenes_done  INTEGER NOT NULL DEFAULT 0,
+        scenes_valid INTEGER NOT NULL DEFAULT 0,
+        error_reason TEXT,                      -- 'area-too-large' | 'search-failed' | 'interrupted' | 'internal'
+        error        TEXT
+    );
+    CREATE INDEX detail_jobs_property ON detail_jobs (property_id, id);
+
+    CREATE TABLE detail_scenes (
+        property_id       INTEGER NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+        acquired_at       TEXT NOT NULL,        -- YYYY-MM-DD (solar day)
+        stac_item_id      TEXT NOT NULL,        -- comma-separated when several MGRS tiles were fused
+        cloud_cover_scene REAL,
+        valid_pct_polygon REAL,
+        status            TEXT NOT NULL CHECK (status IN ('valid', 'cloudy', 'error')),
+        source            TEXT NOT NULL,
+        job_id            INTEGER,
+        error             TEXT,
+        processed_at      TEXT NOT NULL,
+        PRIMARY KEY (property_id, acquired_at)
+    );
+
+    CREATE TABLE detail_assets (
+        id          INTEGER PRIMARY KEY,
+        property_id INTEGER NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+        period      TEXT NOT NULL,              -- YYYY-MM-DD (scene) or YYYY-MM (composite)
+        index_name  TEXT NOT NULL,              -- 'ndvi' | 'ndmi' | 'ndre'
+        kind        TEXT NOT NULL CHECK (kind IN ('scene', 'composite')),
+        path        TEXT NOT NULL,              -- relative to the detail root (pipeline/data/property_detail)
+        min         REAL,
+        max         REAL,
+        crs         TEXT NOT NULL,
+        source      TEXT NOT NULL,
+        created_at  TEXT NOT NULL,
+        UNIQUE (property_id, kind, period, index_name)
+    );
+
+    CREATE TABLE detail_stats (
+        property_id INTEGER NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+        date        TEXT NOT NULL,
+        index_name  TEXT NOT NULL,
+        mean REAL, median REAL, p10 REAL, p90 REAL, std REAL,
+        valid_pct   REAL NOT NULL,
+        n_pixels    INTEGER NOT NULL,
+        class_dist  TEXT NOT NULL,              -- JSON {class label: % of valid pixels}
+        source      TEXT NOT NULL,
+        PRIMARY KEY (property_id, date, index_name)
+    );
+    """,
 ]
 
 

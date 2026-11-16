@@ -16,6 +16,7 @@ import { ZardEmptyComponent } from '@/shared/components/empty';
 import { ZardSkeletonComponent } from '@/shared/components/skeleton';
 
 import { DashboardComponent } from '../dashboard/dashboard.component';
+import { DetailPanelComponent } from '../detail/detail-panel.component';
 import { LegendComponent } from '../map/legend.component';
 import { MapComponent } from '../map/map.component';
 import { AnnualPlanComponent } from '../planning/annual-plan.component';
@@ -38,6 +39,7 @@ import { ConditionsControlsComponent } from './conditions-controls.component';
     ZardSkeletonComponent,
     ConditionsControlsComponent,
     MapComponent,
+    DetailPanelComponent,
     LegendComponent,
     DashboardComponent,
     EnvironmentHistoryComponent,
@@ -105,6 +107,9 @@ import { ConditionsControlsComponent } from './conditions-controls.component';
               </div>
               <af-map class="border-t [--map-h:520px]" />
             </div>
+            @if (!isRegion()) {
+              <af-detail-panel />
+            }
             <af-planning-section [landId]="land()?.id ?? null" />
           </div>
 

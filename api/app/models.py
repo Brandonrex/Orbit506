@@ -26,6 +26,11 @@ class PropertyPatch(CamelModel):
     geometry: PolygonGeometry | None = None
 
 
+class DetailJobRef(CamelModel):
+    id: int
+    status: Literal["queued", "running", "done", "failed", "cancelled"]
+
+
 class PropertyOut(CamelModel):
     id: int
     name: str
@@ -34,6 +39,8 @@ class PropertyOut(CamelModel):
     area_m2: float
     created_at: str
     updated_at: str
+    # Set on POST, and on PATCH when the geometry is sent: the Sentinel-2 detail job it started.
+    detail_job: DetailJobRef | None = None
 
 
 class PlanCycle(CamelModel):
